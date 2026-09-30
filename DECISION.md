@@ -69,6 +69,8 @@ Path A is possible because question 1 is yes, and it is the only path that keeps
 3. Serves the sideband `GET /v1/realtime?call_id=...`, replies to `session.update` with `session.updated`, forwards Flux `Update` events as `conversation.input_transcript.delta`, and on Flux `EndOfTurn` sends `conversation.input_transcript.turn_marked` followed by `conversation.handoff.requested` with the finished transcript. Codex then runs the turn.
 4. Also accepts the plain WebSocket transport (`input_audio_buffer.append` base64 PCM at 24 kHz) in v1 and v2 shapes, so app-server clients configured with `transport = "websocket"` work against the same Flux session.
 
+One protocol mismatch worth knowing: Codex appends caption deltas and never rewrites them (`codex-rs/core/src/realtime_history.rs:340-370`), while Flux `Update` events carry the whole running transcript and may revise the last word or two. The shim forwards only the prefix that stayed identical across two consecutive Updates, cut at a word boundary, and flushes the rest at `EndOfTurn`. A revised word can therefore appear once in the live caption ("Yeah. Is As as much as..." in the spacewalk run), but the text Codex acts on is the exact `EndOfTurn` transcript in `input_transcript`, so the task itself is never wrong. `--no-live-captions` turns the deltas off entirely.
+
 Path B (a Rust fork) is not needed: no Codex code has to change. Path C stays as the fallback and is described in the README for anyone who would rather not touch `config.toml`.
 
 Codex config that points the CLI at the shim (user-level file only):

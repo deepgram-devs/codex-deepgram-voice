@@ -54,6 +54,23 @@ class Settings:
     location_prefix: str = "/v1"
 
 
+def stable_prefix(a: str, b: str) -> str:
+    """Longest common prefix of two transcripts, cut back to a word boundary."""
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    if n == len(a) == len(b):
+        return a
+    if n == len(a) and b[n] == " ":
+        return a  # a is a whole-word prefix of b
+    if n == len(b) and a[n] == " ":
+        return b  # b is a whole-word prefix of a
+    cut = a.rfind(" ", 0, n)
+    return a[:cut] if cut > 0 else ""
+
+
 def trim(text: str, n: int = 120) -> str:
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 3] + "..."
@@ -73,7 +90,8 @@ class VoiceSession:
         self.pending: list[dict] = []
         self.dialect = "v1"  # "v1" (quicksilver) or "v2" (public realtime shape)
         self.session_type = "quicksilver"
-        self.last_sent = ""
+        self.last_sent = ""  # caption text already appended in Codex for the current turn
+        self.prev_update = ""  # previous Flux Update transcript, to find the stable prefix
         self.turn_item_id = ""
         self.handoffs = 0
         self.closed = False
@@ -166,6 +184,7 @@ class VoiceSession:
         conf_s = f"{conf:.3f}" if isinstance(conf, (int, float)) else "n/a"
         if info.event == "StartOfTurn":
             self.last_sent = ""
+            self.prev_update = ""
             self.turn_item_id = f"item_{secrets.token_hex(6)}"
             log.info("[%s] turn %d StartOfTurn", self.tag, info.turn_index)
             if self.dialect == "v2":
@@ -175,20 +194,25 @@ class VoiceSession:
             log.debug("[%s] turn %d Update conf=%s %r", self.tag, info.turn_index, conf_s, trim(info.transcript, 60))
             if not self.settings.live_captions:
                 return
-            text = info.transcript
-            # Codex appends deltas; only send when Flux extended the running transcript.
-            if text.startswith(self.last_sent) and len(text) > len(self.last_sent):
-                delta = text[len(self.last_sent):]
-                self.last_sent = text
-                await self.emit(self.delta_event(delta))
+            # Codex appends caption deltas and never rewrites them, while Flux may revise its
+            # most recent words. Only forward the prefix that stayed the same across two
+            # consecutive Updates, cut at a word boundary.
+            stable = stable_prefix(self.prev_update, info.transcript)
+            self.prev_update = info.transcript
+            await self.send_caption_up_to(stable)
             return
         if info.event == "EndOfTurn":
             text = info.transcript.strip()
-            self.last_sent = ""
             if not text:
+                self.last_sent = ""
+                self.prev_update = ""
                 log.info("[%s] turn %d EndOfTurn with empty transcript (conf=%s), nothing to send",
                          self.tag, info.turn_index, conf_s)
                 return
+            if self.settings.live_captions:
+                await self.send_caption_up_to(text)  # flush the tail so the history is complete
+            self.last_sent = ""
+            self.prev_update = ""
             self.handoffs += 1
             log.info("[%s] turn %d EndOfTurn conf=%s -> Codex: %s", self.tag, info.turn_index, conf_s, trim(text))
             await self.emit(self.done_event(text))
@@ -197,6 +221,23 @@ class VoiceSession:
                 await self.emit(handoff)
             return
         log.debug("[%s] turn %d %s conf=%s", self.tag, info.turn_index, info.event, conf_s)
+
+    async def send_caption_up_to(self, text: str) -> None:
+        """Append whatever of `text` Codex has not seen yet for this turn."""
+        if not text or self.last_sent.startswith(text):
+            return  # nothing new, or Codex already shows more than this
+        if text.startswith(self.last_sent):
+            delta = text[len(self.last_sent):]
+        else:
+            # Flux revised a word we already showed. Codex cannot rewrite, so append from the
+            # common prefix onward; the finished transcript in the handoff is still exact.
+            delta = text[len(stable_prefix(self.last_sent, text)):]
+            if delta and not delta[0].isspace():
+                delta = " " + delta
+        if not delta:
+            return
+        self.last_sent = text
+        await self.emit(self.delta_event(delta))
 
     def delta_event(self, delta: str) -> dict:
         if self.dialect == "v1":
