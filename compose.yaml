@@ -1,0 +1,26 @@
+# One service at a time. DEEPGRAM_API_KEY is read from your shell, never stored here.
+#   DEEPGRAM_API_KEY=... docker compose run --rm flux-check
+#   DEEPGRAM_API_KEY=... docker compose run --rm e2e
+#   DEEPGRAM_API_KEY=... docker compose up shim      (WebSocket transport only; see README)
+services:
+  shim:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    ports:
+      - "8765:8765"
+
+  flux-check:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/wav_to_flux.py", "audio/spacewalk-16k.wav", "--realtime", "--eot", "0.8", "--timeout-ms", "6000"]
+
+  e2e:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/e2e_fake_codex.py", "audio/spacewalk-16k.wav"]

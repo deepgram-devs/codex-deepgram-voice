@@ -1,0 +1,4 @@
+aiohttp>=3.10,<4
+aiortc>=1.9,<2
+websockets>=13,<16
+numpy>=1.26
