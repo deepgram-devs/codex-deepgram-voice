@@ -1,0 +1,40 @@
+$ docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/e2e_fake_codex.py audio/spacewalk-16k.wav
+2026-09-30 16:42:36,260 INFO fake-codex shim started in-process at http://127.0.0.1:33823/v1
+2026-09-30 16:42:36,300 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] call created (session type quicksilver, query {'intent': 'quicksilver', 'architecture': 'avas'})
+2026-09-30 16:42:36,301 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] WebRTC audio track received
+2026-09-30 16:42:36,302 INFO aiohttp.access 127.0.0.1 [30/Sep/2026:16:42:36 +0000] "POST /v1/realtime/calls?intent=quicksilver&architecture=avas HTTP/1.1" 201 2257 "-" "Python/3.12 aiohttp/3.14.3"
+2026-09-30 16:42:36,303 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] WebRTC connection state: connecting
+POST http://127.0.0.1:33823/v1/realtime/calls?intent=quicksilver&architecture=avas -> 201, Location: /v1/realtime/calls/rtc_f9b99669ab6ec6fbfd2594a0, answer 2048 bytes
+2026-09-30 16:42:36,304 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] sideband WebSocket attached
+sideband connected: ws://127.0.0.1:33823/v1/realtime?call_id=rtc_f9b99669ab6ec6fbfd2594a0&intent=quicksilver
+2026-09-30 16:42:36,305 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] session.update type=quicksilver -> dialect v1
+[  0.04s] session.updated id=sess_a3310ed2da7b1af3
+2026-09-30 16:42:36,341 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] WebRTC connection state: connected
+2026-09-30 16:42:36,347 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] data channel 'oai-events' opened by Codex
+2026-09-30 16:42:36,430 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] first audio frame: 48000 Hz, stereo, 960 samples
+2026-09-30 16:42:36,431 INFO flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+2026-09-30 16:42:37,020 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
+2026-09-30 16:42:37,025 INFO flux Flux connected
+2026-09-30 16:42:37,379 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] turn 0 StartOfTurn
+[  6.57s] input_transcript.delta #1: 'Yeah. Is'
+[  6.66s] input_transcript.delta #2: ' is'
+2026-09-30 16:43:02,499 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] turn 0 EndOfTurn conf=0.910 -> Codex: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I thi...
+[ 26.24s] input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 26.24s] handoff.requested id=handoff_8c6f5919af4c input_transcript="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+2026-09-30 16:43:02,504 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] Codex reply for handoff_8c6f5919af4c: Starting on it.
+done waiting
+2026-09-30 16:43:08,522 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] Codex closed the session
+2026-09-30 16:43:08,522 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] sideband WebSocket closed
+2026-09-30 16:43:08,528 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] audio track ended after 1442 frames
+2026-09-30 16:43:08,529 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] WebRTC connection state: closed
+2026-09-30 16:43:08,735 INFO shim [rtc_f9b99669ab6ec6fbfd2594a0] session closed after 32s, 1 handoff(s)
+2026-09-30 16:43:08,741 INFO aiohttp.access 127.0.0.1 [30/Sep/2026:16:42:36 +0000] "GET /v1/realtime?call_id=rtc_f9b99669ab6ec6fbfd2594a0&intent=quicksilver HTTP/1.1" 101 0 "-" "Python/3.12 aiohttp/3.14.3"
+
+summary:
+  session.updated received: True
+  live caption deltas:      2
+  turn_marked events:       1
+  handoff.requested events: 1
+    -> Codex would start on: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I think many of us are looking forward to it just being normal. And, um, I think if it signifies anything, it is, uh, to honor the the women who came before us who, um, were skilled and qualified, um, and didn't get, uh, the same opportunities that we have today.
+RESULT: PASS
+exit=0
