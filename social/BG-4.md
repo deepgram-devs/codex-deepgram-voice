@@ -1,6 +1,6 @@
 # BG-4 social kit: Codex CLI voice on Deepgram Flux
 
-Drafts only. Nothing here has been posted. Handle: coreylweathers. Repo link: [verify] once Corey picks a remote.
+Drafts only. Nothing here has been posted. Handle: coreylweathers. Repo link: https://github.com/deepgram-devs/codex-deepgram-voice (private until Corey flips it public; [verify] visibility before posting).
 
 ## LinkedIn draft (190 words)
 
@@ -10,13 +10,13 @@ Codex added voice at DevDay this week. Under the hood it opens a WebRTC call to 
 
 The part I care about is the turn detection. In a 26-second test clip full of "um" and "uh" pauses, Flux held the turn open through every one of them and closed it once, at 0.91 confidence, with the complete sentence intact.
 
-Setup is two config lines and one container. Code and the source-cited protocol notes are in the repo: [verify repo link]
+Setup is two config lines and one container. Code and the source-cited protocol notes are in the repo: https://github.com/deepgram-devs/codex-deepgram-voice
 
 ## X draft (under 280 characters)
 
-Codex CLI voice now runs on Deepgram Flux on my machine. Press F8, talk through the task, Flux calls the end of turn, Codex gets to work. No fork, just a small local shim speaking Codex's realtime protocol with Flux underneath. Notes and code: [verify link]
+Codex CLI voice now runs on Deepgram Flux on my machine. Press F8, talk through the task, Flux calls the end of turn, Codex gets to work. No fork, just a small local shim speaking Codex's realtime protocol with Flux underneath. Notes and code: https://github.com/deepgram-devs/codex-deepgram-voice
 
-Character count: 243 without the URL, which leaves room for a 23-character t.co link. [verify] after the link is filled in.
+Character count: 243 without the URL plus a 23-character t.co link puts it at 267. [verify] with a live counter before posting.
 
 ## Optional X thread
 
