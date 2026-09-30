@@ -10,7 +10,7 @@ Spike run on 2026-09-30 against the Codex source at `../codex` (commit `67727e7`
 
 ## Question 1: does `[realtime]` accept a custom URL or endpoint?
 
-Not inside the `[realtime]` table itself, but yes at the top level of `config.toml`:
+Yes, through two top-level keys in `config.toml` (the `[realtime]` table itself only selects the session kind):
 
 | Key | What it overrides | Source |
 | --- | --- | --- |

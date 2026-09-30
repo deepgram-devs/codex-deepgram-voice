@@ -24,3 +24,17 @@ services:
     environment:
       - DEEPGRAM_API_KEY
     command: ["python", "tests/e2e_fake_codex.py", "audio/spacewalk-16k.wav"]
+
+  ws-check-v1:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v1"]
+
+  ws-check-v2:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v2"]

@@ -2,7 +2,7 @@
 
 Drafts only. Nothing here has been posted. Handle: coreylweathers. Repo link: [verify] once Corey picks a remote.
 
-## LinkedIn draft (about 170 words)
+## LinkedIn draft (190 words)
 
 I made Deepgram Flux the speech layer for Codex CLI voice mode, so you can press F8, describe a task out loud, and Codex starts on it the moment you finish talking.
 
@@ -14,9 +14,9 @@ Setup is two config lines and one container. Code and the source-cited protocol 
 
 ## X draft (under 280 characters)
 
-Codex CLI voice now runs on Deepgram Flux on my machine. Press F8, talk through the task, Flux calls the end of turn, Codex gets to work. No fork: a small local shim speaks Codex's realtime protocol with Flux underneath. Repo + protocol notes: [verify link]
+Codex CLI voice now runs on Deepgram Flux on my machine. Press F8, talk through the task, Flux calls the end of turn, Codex gets to work. No fork, just a small local shim speaking Codex's realtime protocol with Flux underneath. Notes and code: [verify link]
 
-Character count: [verify] after the link is filled in; the text above is 247 characters without a URL.
+Character count: 243 without the URL, which leaves room for a 23-character t.co link. [verify] after the link is filled in.
 
 ## Optional X thread
 

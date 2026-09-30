@@ -34,6 +34,15 @@ docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/e2e_fake_codex
 
 This starts the shim inside the container and drives it with a fake Codex client that does what the real CLI does (WebRTC offer, multipart call creation, sideband WebSocket, `session.update`). It ends with `RESULT: PASS` when a `conversation.handoff.requested` carrying the finished transcript came back.
 
+The plain WebSocket transport has its own check, in both message shapes Codex can send:
+
+```bash
+docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/ws_transport_check.py audio/spacewalk-16k.wav --dialect v1
+docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/ws_transport_check.py audio/spacewalk-16k.wav --dialect v2
+```
+
+The same commands work through `compose.yaml` (`docker compose run --rm flux-check`, `e2e`, `ws-check-v1`, `ws-check-v2`). Run one at a time.
+
 ### 3. Run the shim on your machine for the real microphone
 
 WebRTC media from Codex to a container does not work on Docker Desktop for macOS, so the real session runs the shim on the host:
@@ -98,6 +107,8 @@ The plain WebSocket transport (`[realtime] transport = "websocket"`, used by app
 - `shim/server.py`: the Codex-facing realtime server (WebRTC + sideband + WebSocket transport)
 - `tests/wav_to_flux.py`: stream a WAV to Flux and print turn events
 - `tests/e2e_fake_codex.py`: fake Codex client, full protocol check
+- `tests/ws_transport_check.py`: plain WebSocket transport check (v1 and v2 shapes)
+- `evidence/`: trimmed output of every live run recorded for this goal
 - `audio/spacewalk-16k.wav`: 26 s public sample (dpgr.am/spacewalk.wav) resampled to 16 kHz mono
 - `Dockerfile`, `compose.yaml`: container image and one-service-at-a-time run recipes
 - `DECISION.md`, `DONE.md`, `GOAL.md`, `social/BG-4.md`: spike answers, evidence, spec, social kit
