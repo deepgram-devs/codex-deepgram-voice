@@ -25,11 +25,11 @@ The plain WebSocket transport, which app-server clients use instead of WebRTC, w
 
 Why this counts as "Codex starts working": in Codex core the fan-out task routes `conversation.handoff.requested.input_transcript` into a turn (`codex-rs/core/src/realtime_conversation.rs:1764-1772`, `1850-1870`). The shim sends exactly that event with the Flux EndOfTurn transcript. Codex's own reply path (`conversation.handoff.append`) was exercised too: the fake client sent one and the shim logged "Codex reply for handoff_...".
 
-Needs Corey to verify (about 3 minutes, README steps 3 to 5):
+Needs Corey to verify (about 3 minutes, README steps 3 to 5). Codex CLI 0.159 or newer is required; the CLI bundled with the Codex desktop app (0.142.5 as of 2026-10-01) has voice mode off and no voice host, so `npm install -g @openai/codex` first and check `codex features list` shows `realtime_conversation  stable  true`.
 
 1. `. .venv/bin/activate && DEEPGRAM_API_KEY=... python -m shim.server -v`
-2. Add the two `experimental_realtime_*_base_url` lines to `~/.codex/config.toml` (user level, not project level).
-3. Run `codex`, press `F8`, say "Create a file called hello.txt that says hello from Flux", stop talking.
+2. In a second terminal, `./run-codex-with-flux.sh` (passes the two endpoint keys as `-c` overrides; no edit to `~/.codex/config.toml` needed).
+3. Press `F8`, say "Create a file called hello.txt that says hello from Flux", stop talking.
 4. Expect in the shim log: `call created`, `WebRTC connection state: connected`, `first audio frame: 48000 Hz`, `turn 0 StartOfTurn`, then `EndOfTurn conf=0.8x -> Codex: Create a file called hello.txt ...`, then `Codex reply for handoff_...`. Expect in Codex: the caption, then the turn running and the file created.
 5. If the WebRTC state never reaches `connected`, run the shim with `-v` and check that the answer SDP carried a host candidate for a local interface; VPN utun interfaces can add candidates, the cap in `codex-voice-host` is 32.
 
@@ -66,4 +66,4 @@ Status: met. `social/BG-4.md` contains a 190-word LinkedIn draft, a 243-characte
 - No upstream Codex PR, fork, or comment; the Codex clone was read only.
 - `DEEPGRAM_API_KEY` appears in no file; Docker receives it through `-e DEEPGRAM_API_KEY`.
 - Notion: only BG-4's Status and Run log were touched.
-- This repo has no remote yet; nothing was pushed. The draft PR waits on Corey to choose a remote.
+- Remote: `deepgram-devs/codex-deepgram-voice`, branch `goal/bg-4-codex-voice`, draft PR #1. The PR stays draft until the real F8 run above is recorded here.

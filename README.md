@@ -54,7 +54,17 @@ DEEPGRAM_API_KEY="..." python -m shim.server            # listens on 127.0.0.1:8
 
 ### 4. Point Codex at the shim
 
-Add to `~/.codex/config.toml` (these keys are refused in project-level `.codex/config.toml`):
+You need Codex CLI 0.159 or newer; voice mode shipped as a stable feature there
+(`codex features list` shows `realtime_conversation  stable  true`). The CLI
+bundled with the Codex desktop app can be older: 0.142.5 has the feature off and
+no voice host, so install the CLI itself with `npm install -g @openai/codex`.
+
+Easiest, with no config changes: `./run-codex-with-flux.sh` starts `codex` with
+the two endpoint keys as `-c` overrides (the keys are only refused from
+project-level `.codex/config.toml`; user config and `-c` both work). Any extra
+arguments go through to `codex`.
+
+Or make it permanent in `~/.codex/config.toml`:
 
 ```toml
 experimental_realtime_webrtc_call_base_url = "http://127.0.0.1:8765/v1"
