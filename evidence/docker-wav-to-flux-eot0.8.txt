@@ -1,0 +1,120 @@
+$ docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/wav_to_flux.py audio/spacewalk-16k.wav --realtime --eot 0.8 --timeout-ms 6000
+audio: 829868 bytes = 25.9s, chunk=2560B/80ms
+2026-09-30 16:48:57,304 flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+url: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+2026-09-30 16:48:57,785 flux Flux connected
+[  0.80s] TurnInfo Update         turn=0 eot_conf=0.005 ''
+[  1.05s] TurnInfo StartOfTurn    turn=0 eot_conf=0.022 'Yeah.'
+[  1.32s] TurnInfo Update         turn=0 eot_conf=0.041 'Yeah. Is'
+[  1.60s] TurnInfo Update         turn=0 eot_conf=0.008 'Yeah. Is'
+[  1.89s] TurnInfo Update         turn=0 eot_conf=0.001 'Yeah. Is is'
+[  2.13s] TurnInfo Update         turn=0 eot_conf=0.001 'Yeah. As as much as'
+[  2.36s] TurnInfo Update         turn=0 eot_conf=0.005 'Yeah. As as much as'
+[  2.73s] TurnInfo Update         turn=0 eot_conf=0.008 'Yeah. As as much as'
+[  3.25s] TurnInfo Update         turn=0 eot_conf=0.003 'Yeah. As as much as, um'
+[  3.68s] TurnInfo Update         turn=0 eot_conf=0.002 'Yeah. As as much as, um, it'
+[  3.81s] TurnInfo Update         turn=0 eot_conf=0.005 "Yeah. As as much as, um, it's worth"
+[  4.06s] TurnInfo Update         turn=0 eot_conf=0.005 "Yeah. As as much as, um, it's worth"
+[  4.24s] TurnInfo Update         turn=0 eot_conf=0.002 "Yeah. As as much as, um, it's worth self"
+[  4.67s] TurnInfo Update         turn=0 eot_conf=0.010 "Yeah. As as much as, um, it's worth solid"
+[  4.84s] TurnInfo Update         turn=0 eot_conf=0.027 "Yeah. As as much as, um, it's worth celebrating"
+[  4.96s] TurnInfo Update         turn=0 eot_conf=0.012 "Yeah. As as much as, um, it's worth celebrating,"
+[  5.08s] TurnInfo Update         turn=0 eot_conf=0.025 "Yeah. As as much as, um, it's worth celebrating,"
+[  5.28s] TurnInfo Update         turn=0 eot_conf=0.025 "Yeah. As as much as, um, it's worth celebrating,"
+[  5.52s] TurnInfo Update         turn=0 eot_conf=0.010 "Yeah. As as much as, um, it's worth celebrating,"
+[  5.77s] TurnInfo Update         turn=0 eot_conf=0.001 "Yeah. As as much as, um, it's worth celebrating, uh,"
+[  6.01s] TurnInfo Update         turn=0 eot_conf=0.008 "Yeah. As as much as, um, it's worth celebrating, uh, the first"
+[  6.29s] TurnInfo Update         turn=0 eot_conf=0.011 "Yeah. As as much as, um, it's worth celebrating, uh, the first"
+[  6.57s] TurnInfo Update         turn=0 eot_conf=0.006 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh"
+[  6.84s] TurnInfo Update         turn=0 eot_conf=0.013 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, space"
+[  7.08s] TurnInfo Update         turn=0 eot_conf=0.029 "Yeah. As as much as, um, it's worth celebrating, uh, the first spacewalk"
+[  7.33s] TurnInfo Update         turn=0 eot_conf=0.024 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, space"
+[  7.60s] TurnInfo Update         turn=0 eot_conf=0.025 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk"
+[  7.85s] TurnInfo Update         turn=0 eot_conf=0.008 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um"
+[  8.15s] TurnInfo Update         turn=0 eot_conf=0.007 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with"
+[  8.41s] TurnInfo Update         turn=0 eot_conf=0.008 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[  8.80s] TurnInfo Update         turn=0 eot_conf=0.006 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[  8.97s] TurnInfo Update         turn=0 eot_conf=0.049 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[  9.21s] TurnInfo Update         turn=0 eot_conf=0.022 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[  9.48s] TurnInfo Update         turn=0 eot_conf=0.019 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[  9.78s] TurnInfo Update         turn=0 eot_conf=0.066 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 10.05s] TurnInfo Update         turn=0 eot_conf=0.011 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 10.25s] TurnInfo Update         turn=0 eot_conf=0.004 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 10.53s] TurnInfo Update         turn=0 eot_conf=0.003 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 10.85s] TurnInfo Update         turn=0 eot_conf=0.003 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 11.09s] TurnInfo Update         turn=0 eot_conf=0.010 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 11.86s] TurnInfo Update         turn=0 eot_conf=0.013 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 12.20s] TurnInfo Update         turn=0 eot_conf=0.006 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 12.41s] TurnInfo Update         turn=0 eot_conf=0.001 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 13.13s] TurnInfo Update         turn=0 eot_conf=0.001 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 13.56s] TurnInfo Update         turn=0 eot_conf=0.001 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 13.78s] TurnInfo Update         turn=0 eot_conf=0.003 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 14.29s] TurnInfo Update         turn=0 eot_conf=0.013 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 14.57s] TurnInfo Update         turn=0 eot_conf=0.015 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 15.00s] TurnInfo Update         turn=0 eot_conf=0.042 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 15.34s] TurnInfo Update         turn=0 eot_conf=0.027 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 17.21s] TurnInfo Update         turn=0 eot_conf=0.007 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 17.33s] TurnInfo Update         turn=0 eot_conf=0.340 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 17.45s] TurnInfo Update         turn=0 eot_conf=0.300 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 17.61s] TurnInfo Update         turn=0 eot_conf=0.040 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 17.81s] TurnInfo Update         turn=0 eot_conf=0.059 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 17.81s] TurnInfo Update         turn=0 eot_conf=0.065 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 17.95s] TurnInfo Update         turn=0 eot_conf=0.079 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 18.30s] TurnInfo Update         turn=0 eot_conf=0.098 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 18.66s] TurnInfo Update         turn=0 eot_conf=0.003 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 18.66s] TurnInfo Update         turn=0 eot_conf=0.004 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 18.67s] TurnInfo Update         turn=0 eot_conf=0.013 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 18.67s] TurnInfo Update         turn=0 eot_conf=0.002 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 18.87s] TurnInfo Update         turn=0 eot_conf=0.002 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.23s] TurnInfo Update         turn=0 eot_conf=0.004 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.23s] TurnInfo Update         turn=0 eot_conf=0.065 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.23s] TurnInfo Update         turn=0 eot_conf=0.058 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.23s] TurnInfo Update         turn=0 eot_conf=0.008 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.29s] TurnInfo Update         turn=0 eot_conf=0.049 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.42s] TurnInfo Update         turn=0 eot_conf=0.022 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.53s] TurnInfo Update         turn=0 eot_conf=0.028 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.65s] TurnInfo Update         turn=0 eot_conf=0.014 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 19.77s] TurnInfo Update         turn=0 eot_conf=0.012 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 20.06s] TurnInfo Update         turn=0 eot_conf=0.028 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 20.17s] TurnInfo Update         turn=0 eot_conf=0.018 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 20.73s] TurnInfo Update         turn=0 eot_conf=0.003 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 20.86s] TurnInfo Update         turn=0 eot_conf=0.004 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 20.97s] TurnInfo Update         turn=0 eot_conf=0.006 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 21.13s] TurnInfo Update         turn=0 eot_conf=0.011 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 21.37s] TurnInfo Update         turn=0 eot_conf=0.007 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 21.65s] TurnInfo Update         turn=0 eot_conf=0.045 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 21.93s] TurnInfo Update         turn=0 eot_conf=0.250 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 22.18s] TurnInfo Update         turn=0 eot_conf=0.052 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 22.41s] TurnInfo Update         turn=0 eot_conf=0.034 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 22.69s] TurnInfo Update         turn=0 eot_conf=0.053 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 22.93s] TurnInfo Update         turn=0 eot_conf=0.006 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 23.25s] TurnInfo Update         turn=0 eot_conf=0.028 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 23.45s] TurnInfo Update         turn=0 eot_conf=0.014 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 23.77s] TurnInfo Update         turn=0 eot_conf=0.005 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 24.01s] TurnInfo Update         turn=0 eot_conf=0.007 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 24.27s] TurnInfo Update         turn=0 eot_conf=0.034 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 24.53s] TurnInfo Update         turn=0 eot_conf=0.021 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 24.77s] TurnInfo Update         turn=0 eot_conf=0.041 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 25.05s] TurnInfo Update         turn=0 eot_conf=0.043 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 25.29s] TurnInfo Update         turn=0 eot_conf=0.024 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 25.57s] TurnInfo Update         turn=0 eot_conf=0.011 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 25.82s] TurnInfo Update         turn=0 eot_conf=0.006 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 26.13s] TurnInfo Update         turn=0 eot_conf=0.035 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 26.37s] TurnInfo Update         turn=0 eot_conf=0.018 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 26.61s] TurnInfo Update         turn=0 eot_conf=0.026 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 26.90s] TurnInfo Update         turn=0 eot_conf=0.022 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 27.17s] TurnInfo Update         turn=0 eot_conf=0.023 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 27.41s] TurnInfo Update         turn=0 eot_conf=0.112 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 27.83s] TurnInfo Update         turn=0 eot_conf=0.052 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 27.97s] TurnInfo Update         turn=0 eot_conf=0.083 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 28.31s] TurnInfo Update         turn=0 eot_conf=0.060 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 28.46s] TurnInfo Update         turn=0 eot_conf=0.395 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 28.72s] TurnInfo EndOfTurn      turn=0 eot_conf=0.820 "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with..."
+[ 29.01s] TurnInfo Update         turn=1 eot_conf=0.411 ''
+[ 29.30s] TurnInfo Update         turn=1 eot_conf=0.667 ''
+[ 29.40s] TurnInfo Update         turn=1 eot_conf=0.723 ''
+[ 29.58s] TurnInfo Update         turn=1 eot_conf=0.680 ''
+[ 29.68s] TurnInfo Update         turn=1 eot_conf=0.486 ''
+EndOfTurn events: 1
+  turn 0 conf=0.8198: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team, um, I think many of us are looking forward to it just being normal. And, um, I think if it signifies anything, it is, uh, to honor the the women who came before us who, um, were skilled and qualified, um, and didn't get the the same opportunities that we have today.
+exit=0

@@ -1,0 +1,8 @@
+aiohttp>=3.10,<4
+# 1.11 is the oldest aiortc that accepts av>=14; 1.15 accepts av up to <18.
+aiortc>=1.11,<2
+# av is imported directly (resampling). 14.4.0 ships only an sdist that needs ffmpeg to build.
+av>=14,<18,!=14.4.0
+# 14+ is required: 13.x's top-level connect() is the legacy client (no additional_headers).
+websockets>=14,<16
+numpy>=1.26,<3

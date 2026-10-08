@@ -1,0 +1,37 @@
+$ docker compose run --rm hardening-check
+[missing-key]
+  exit code 1, stderr: 'error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the shim again.'
+  -> PASS
+[origin]
+  WS   Origin=None                             -> 101 (want 101)
+  WS   Origin='http://localhost:3000'          -> 101 (want 101)
+  WS   Origin='http://127.0.0.1:8765'          -> 101 (want 101)
+  WS   Origin='http://[::1]:8765'              -> 101 (want 101)
+WARNING:shim:rejected GET /v1/realtime from non-local Origin
+  WS   Origin='https://evil.example'           -> 403 (want 403)
+WARNING:shim:rejected GET /v1/realtime from non-local Origin
+  WS   Origin='http://localhost.evil.example'  -> 403 (want 403)
+WARNING:shim:rejected GET /v1/realtime from non-local Origin
+  WS   Origin='null'                           -> 403 (want 403)
+WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
+  POST Origin='https://evil.example'           -> 403 (want 403)
+  POST Origin=None                             -> 400 (want 400)
+  -> PASS
+[orphan]
+  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_0c9c51eb12f4507a21783da1
+WARNING:shim:[rtc_0c9c51eb12f4507a21783da1] no sideband after 2s; dropping the call
+  sessions right after the call: 1, after 2.5s: 0
+  -> PASS
+[bad-key]
+  Codex got: {"type": "error", "error": {"type": "flux_error", "message": "Deepgram rejected the API key (HTTP 401). Check DEEPGRAM_API_KEY and restart the shim."}}
+  shim output: 11 lines at -v, Flux connect attempts: 1, key in output: False
+  -> PASS
+[late-sideband]
+  POST /v1/realtime/calls -> 201
+  WebRTC state after 3s: connected; attaching the sideband
+  Codex got: {"type": "error", "error": {"type": "flux_error", "message": "Deepgram rejected the API key (HTTP 401). Check DEEPGRAM_API_KEY and restart the shim."}}
+  shim output: 18 lines at -v, Flux connect attempts: 1, key in output: False
+  sideband events in order: ['session.updated', 'error']
+  Flux rejected the key before the sideband attached: True
+  -> PASS
+RESULT: PASS {'missing-key': True, 'origin': True, 'orphan': True, 'bad-key': True, 'late-sideband': True}
