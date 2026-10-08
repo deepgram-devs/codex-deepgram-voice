@@ -1,11 +1,13 @@
-$ docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/ws_transport_check.py audio/spacewalk-16k.wav --dialect v1
-connected ws://127.0.0.1:35279/v1/realtime?intent=quicksilver (dialect v1)
-[  0.02s] session.updated {'id': 'sess_f0152f38d0c6acc0', 'type': 'quicksilver'}
-[  1.38s] conversation.input_transcript.delta: 'Yeah. Is'
-[  2.25s] conversation.input_transcript.delta: ' As as much as'
-[  3.21s] conversation.input_transcript.delta: ','
-[ 32.47s] conversation.input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
-[ 32.47s] conversation.handoff.requested: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+$ docker compose run --rm ws-check-v1
+ Container codex-deepgram-voice-ws-check-v1-run-a8c63955bf0b Creating 
+ Container codex-deepgram-voice-ws-check-v1-run-a8c63955bf0b Created 
+connected ws://127.0.0.1:46103/v1/realtime?intent=quicksilver (dialect v1, session type quicksilver)
+[  0.11s] session.updated {'id': 'sess_7b5e6788f061a883', 'type': 'quicksilver'}
+[  1.26s] conversation.input_transcript.delta: 'Yeah. Is'
+[  2.02s] conversation.input_transcript.delta: ' As as much as'
+[  2.78s] conversation.input_transcript.delta: ','
+[ 28.95s] conversation.input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 28.95s] conversation.handoff.requested: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
 
 summary:
   session.updated: 1, caption deltas: 60, done events: 1, handoffs: 1, other: []

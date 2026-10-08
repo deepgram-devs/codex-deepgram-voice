@@ -1,6 +1,6 @@
 # Spike: can Deepgram Flux be the speech layer for Codex CLI voice?
 
-Spike run on 2026-09-30 against the Codex source at `../codex` (commit `67727e7`, "Allow managed requirements to disable the Windows MXC sandbox (#49642)", 2026-09-30). Every answer cites a file and line in that checkout, a command run here, or a public doc. Third-party writeups are quoted as claims, not as source.
+Written on 2026-09-30 against the Codex source at commit `67727e7` ("Allow managed requirements to disable the Windows MXC sandbox (#49642)", 2026-09-30). Every answer cites a file and line in that checkout, a command, or a public doc. Line numbers are for that commit and drift as Codex changes; the symbol names do not. Third-party writeups are quoted as claims, not as source.
 
 ## Short version
 
@@ -49,7 +49,7 @@ The other two dialects, for completeness: **v2** is the public Realtime API shap
 
 ## Question 3: can the push-to-talk layer choose a speech provider? Is it Wispr Flow?
 
-No provider choice exists, and Wispr is not in the source. `grep -rIl -i wispr ~/code/codex` (all file types, excluding `node_modules`) returns nothing, and neither does `push_to_talk`, `push-to-talk`, or `dictat` in `codex-rs/` (only `Feature::InAppDictation`, a desktop-app flag at `codex-rs/features/src/lib.rs:271-274`). Voice is `/voice` (`codex-rs/tui/src/slash_command.rs:42,136`) bound to `F8` with `Ctrl+X` for mute (`codex-rs/tui/src/keymap.rs:1659-1660`); it is a hands-free realtime call, not push-to-talk.
+No provider choice exists, and Wispr is not in the source. `grep -rIl -i wispr` over the whole checkout (all file types, excluding `node_modules`) returns nothing, and neither does `push_to_talk`, `push-to-talk`, or `dictat` in `codex-rs/` (only `Feature::InAppDictation`, a desktop-app flag at `codex-rs/features/src/lib.rs:271-274`). Voice is `/voice` (`codex-rs/tui/src/slash_command.rs:42,136`) bound to `F8` with `Ctrl+X` for mute (`codex-rs/tui/src/keymap.rs:1659-1660`); it is a hands-free realtime call, not push-to-talk.
 
 The claim comes from a third-party knowledge base (`https://codex.danielvaughan.com/2026/04/17/codex-cli-voice-realtime-webrtc-push-to-talk/`), which says the v0.105.0 "Layer 1" push-to-talk "uses the Wispr Flow transcription engine" and enabled with `[features] voice_transcription = true`. That flag does not exist in the current source (`grep -rn voice_transcription codex-rs` is empty), so whatever shipped in February was replaced by the realtime voice path. Speech recognition now happens inside OpenAI's realtime session; the client ships Opus audio and receives transcript events. The public voice page (`https://learn.chatgpt.com/docs/features/voice`, redirected from `developers.openai.com/codex/features/voice`) names no transcription model or provider.
 
@@ -83,7 +83,7 @@ experimental_realtime_ws_base_url = "ws://127.0.0.1:8765/v1"
 
 ## Testing limits
 
-No OpenAI login or microphone was available where this was written, so the real TUI-to-shim run is not recorded. The shim's WebRTC and sideband behavior was exercised headlessly with a fake Codex client built from the same source citations, inside Docker and in a host venv, against the live Flux API; the README lists what each check covers and the trimmed output is under `evidence/`. The auth headers Codex sends to the shim (ChatGPT bearer token, account id, attestation) are never logged or stored; the shim ignores them.
+The headless checks run without an OpenAI login or a microphone, so the real TUI-to-shim run is not part of the recorded evidence. The shim's WebRTC and sideband behavior was exercised headlessly with a fake Codex client built from the same source citations, inside Docker and in a host venv, against the live Flux API; the README lists what each check covers and the trimmed output is under `evidence/`. The auth headers Codex sends to the shim (ChatGPT bearer token, account id, attestation) are never logged or stored; the shim ignores them.
 
 ## Flux turn-detection settings
 

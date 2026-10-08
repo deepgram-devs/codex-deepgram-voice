@@ -147,34 +147,45 @@ class FluxSession:
             del self._pending[:CHUNK_BYTES]
             await ws.send(chunk)
 
-    async def flush(self) -> None:
+    async def flush(self, ws: Optional[websockets.ClientConnection] = None) -> None:
         """Send a trailing partial chunk, padded with silence to 80 ms."""
-        if self._ws is None or not self._pending:
+        ws = ws or self._ws
+        if ws is None or not self._pending:
             return
         chunk = bytes(self._pending) + b"\x00" * (CHUNK_BYTES - len(self._pending))
         self._pending.clear()
-        await self._ws.send(chunk)
+        await ws.send(chunk)
 
     async def close(self, wait_s: float = 8.0) -> None:
-        """CloseStream, then wait for Flux to finish the last turn and close."""
+        """CloseStream, then wait for Flux to finish the last turn and close.
+
+        Safe to call more than once, including concurrently: the first caller owns the
+        socket, later callers wait for it to finish.
+        """
         self.closing = True
-        if self._ws is None:
+        ws = self._ws
+        if ws is None:
+            if self._reader is not None and not self.closed.is_set():
+                try:
+                    await asyncio.wait_for(self.closed.wait(), timeout=wait_s)
+                except asyncio.TimeoutError:
+                    pass
             return
+        self._ws = None  # claim the socket; a concurrent close() takes the branch above
         try:
-            await self.flush()
-            await self._ws.send(json.dumps({"type": "CloseStream"}))
-        except websockets.ConnectionClosed:
-            pass
-        if self._reader is not None:
             try:
-                await asyncio.wait_for(self._reader, timeout=wait_s)
-            except asyncio.TimeoutError:
-                log.warning("Flux reader did not finish within %.1fs; forcing close", wait_s)
-                self._reader.cancel()
-        try:
-            await self._ws.close()
+                await self.flush(ws)
+                await ws.send(json.dumps({"type": "CloseStream"}))
+            except websockets.ConnectionClosed:
+                pass
+            if self._reader is not None:
+                try:
+                    await asyncio.wait_for(self._reader, timeout=wait_s)
+                except asyncio.TimeoutError:
+                    log.warning("Flux reader did not finish within %.1fs; forcing close", wait_s)
+                    self._reader.cancel()
+            await ws.close()
         finally:
-            self._ws = None
             self.closed.set()
 
     async def _read_loop(self) -> None:
@@ -212,5 +223,11 @@ class FluxSession:
                     log.debug("Flux message: %s", kind)
         except websockets.ConnectionClosed as exc:
             log.info("Flux socket closed: %s", exc.code)
+        except Exception as exc:  # noqa: BLE001
+            # A bug in a handler or an unexpected frame must not end the session silently.
+            log.exception("Flux reader failed")
+            if self.on_error is not None and not self.closing:
+                await self.on_error(f"Deepgram Flux stream failed ({type(exc).__name__}). "
+                                    "Press F8 to start a new voice session.")
         finally:
             self.closed.set()

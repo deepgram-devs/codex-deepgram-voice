@@ -1,4 +1,6 @@
 $ docker compose run --rm hardening-check
+ Container codex-deepgram-voice-hardening-check-run-d726031fa021 Creating 
+ Container codex-deepgram-voice-hardening-check-run-d726031fa021 Created 
 [missing-key]
   exit code 1, stderr: 'error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the shim again.'
   -> PASS
@@ -18,8 +20,8 @@ WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
   POST Origin=None                             -> 400 (want 400)
   -> PASS
 [orphan]
-  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_0c9c51eb12f4507a21783da1
-WARNING:shim:[rtc_0c9c51eb12f4507a21783da1] no sideband after 2s; dropping the call
+  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_888982b9430bb08b3343c31a
+WARNING:shim:[rtc_888982b9430bb08b3343c31a] no sideband after 2s; dropping the call
   sessions right after the call: 1, after 2.5s: 0
   -> PASS
 [bad-key]
@@ -35,3 +37,4 @@ WARNING:shim:[rtc_0c9c51eb12f4507a21783da1] no sideband after 2s; dropping the c
   Flux rejected the key before the sideband attached: True
   -> PASS
 RESULT: PASS {'missing-key': True, 'origin': True, 'orphan': True, 'bad-key': True, 'late-sideband': True}
+exit=0
