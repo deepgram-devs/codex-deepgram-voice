@@ -1,0 +1,13 @@
+$ docker compose run --rm ws-check-v2-handoff
+connected ws://127.0.0.1:42809/v1/realtime (dialect v2, session type realtime)
+[  0.02s] session.updated {'id': 'sess_fb6cd7e0c612f82a', 'type': 'realtime'}
+[  0.62s] input_audio_buffer.speech_started
+[  1.10s] conversation.item.input_audio_transcription.delta: 'Yeah. Is'
+[  1.86s] conversation.item.input_audio_transcription.delta: ' As as much as'
+[  2.66s] conversation.item.input_audio_transcription.delta: ','
+[ 28.42s] conversation.item.input_audio_transcription.completed: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 28.42s] conversation.item.done: function_call background_agent prompt="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+
+summary:
+  session.updated: 1, caption deltas: 60, done events: 1, handoffs: 1, other: ['input_audio_buffer.speech_started']
+RESULT: PASS
