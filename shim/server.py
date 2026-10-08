@@ -30,7 +30,7 @@ import secrets
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 from urllib.parse import urlsplit
 
 import av
@@ -47,6 +47,7 @@ log = logging.getLogger("shim")
 CODEX_WS_PCM_RATE = 24_000  # codex-api methods_common.rs REALTIME_AUDIO_SAMPLE_RATE
 V2_HANDOFF_TOOL = "background_agent"  # codex-api protocol_v2.rs BACKGROUND_AGENT_TOOL_NAME
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+MAX_CALL_BODY = 4 * 1024 * 1024  # an SDP offer plus the session JSON is a few KB
 
 
 @dataclass
@@ -113,7 +114,10 @@ class VoiceSession:
         self.handoffs = 0
         self.closed = False
         self.flushing = False  # draining `pending` after session.update
+        self.ready = False  # session.updated has been sent on the current sideband socket
         self.attached = False  # a sideband WebSocket has connected at least once
+        self.on_closed: Optional[Callable[[], None]] = None  # set by the app: drops the registry entry
+        self._flux_lock = asyncio.Lock()  # one Flux stream per session, even with two audio sources
         self.flux_failed = False  # Flux could not start or died; stop feeding, error sent once
         self._tasks: set[asyncio.Task] = set()  # strong refs to the pump and expiry tasks
         self._ws_resampler = av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
@@ -131,7 +135,13 @@ class VoiceSession:
         """Open Flux on first audio. False (once logged and reported) if it cannot."""
         if self.flux_failed:
             return False
-        if self.flux is None:
+        if self.flux is not None:
+            return True
+        async with self._flux_lock:
+            if self.flux_failed or self.closed:
+                return False
+            if self.flux is not None:  # another audio source opened it while we waited
+                return True
             s = self.settings
             flux = FluxSession(
                 self.on_turn,
@@ -175,11 +185,16 @@ class VoiceSession:
             await flux.feed(pcm)
         except websockets.ConnectionClosed:
             if not flux.closing:
-                await self.on_flux_error("Deepgram Flux closed the stream unexpectedly.")
+                await self.on_flux_error("Deepgram Flux closed the stream unexpectedly. "
+                                         "Press F8 to start a new voice session.")
 
     async def feed_codex_ws_audio(self, b64: str) -> None:
         """input_audio_buffer.append: base64 PCM16 mono at 24 kHz from the WebSocket transport."""
-        raw = base64.b64decode(b64)
+        try:
+            raw = base64.b64decode(b64, validate=True)
+        except (ValueError, TypeError):
+            log.warning("[%s] input_audio_buffer.append carried invalid base64; frame dropped", self.tag)
+            return
         if len(raw) < 2:
             return
         samples = np.frombuffer(raw[: len(raw) - len(raw) % 2], dtype="<i2").reshape(1, -1)
@@ -321,7 +336,9 @@ class VoiceSession:
                          "call_id": call_id, "arguments": json.dumps({"prompt": text})}}
 
     async def emit(self, event: dict) -> None:
-        if self.ws is None or self.ws.closed or self.flushing:
+        # Nothing goes out before `session.updated`, and nothing overtakes the queue while it
+        # drains, so Codex always sees events in the order Flux produced them.
+        if self.ws is None or self.ws.closed or not self.ready or self.flushing:
             self.pending.append(event)
             return
         try:
@@ -342,6 +359,9 @@ class VoiceSession:
                 except json.JSONDecodeError:
                     log.warning("[%s] non-JSON text frame from Codex", self.tag)
                     continue
+                if not isinstance(data, dict):
+                    log.warning("[%s] Codex message is not a JSON object; ignored", self.tag)
+                    continue
                 if await self.handle_codex_message(data):
                     break
             elif msg.type == WSMsgType.BINARY:
@@ -350,6 +370,7 @@ class VoiceSession:
                 break
         log.info("[%s] sideband WebSocket closed", self.tag)
         self.ws = None
+        self.ready = False
 
     async def handle_codex_message(self, data: dict) -> bool:
         """Returns True when the session should end."""
@@ -360,17 +381,23 @@ class VoiceSession:
             self.session_type = stype
             self.dialect = "v1" if stype == "quicksilver" else "v2"
             log.info("[%s] session.update type=%s -> dialect %s", self.tag, stype, self.dialect)
-            await self.emit({"type": "session.updated",
-                             "session": {"id": self.session_id, "type": stype}})
+            ws = self.ws
+            if ws is None or ws.closed:
+                return False
+            updated = {"type": "session.updated", "session": {"id": self.session_id, "type": stype}}
             # Events emitted during the flush queue behind it, so Codex sees them in order.
             self.flushing = True
             try:
+                await ws.send_json(updated)
                 while self.pending:
                     try:
-                        await self.ws.send_json(self.pending[0])  # type: ignore[union-attr]
+                        await ws.send_json(self.pending[0])
                     except ConnectionResetError:
-                        break  # the sideband went away: keep the rest, in order, for the next one
+                        return False  # the sideband went away: keep the rest, in order, for the next one
                     self.pending.pop(0)
+                self.ready = True
+            except ConnectionResetError:
+                return False
             finally:
                 self.flushing = False
             return False
@@ -412,12 +439,14 @@ class VoiceSession:
                 task.cancel()  # the pump is idle once `closed` is set; this just reaps it
         log.info("[%s] session closed after %.0fs, %d handoff(s)", self.tag,
                  time.monotonic() - self._started, self.handoffs)
+        if self.on_closed is not None:
+            self.on_closed()
 
 
 # ---- HTTP layer --------------------------------------------------------------------
 
 def build_app(settings: Settings) -> web.Application:
-    app = web.Application(client_max_size=4 * 1024 * 1024)
+    app = web.Application(client_max_size=MAX_CALL_BODY)
     app["settings"] = settings
     app["sessions"] = {}
 
@@ -439,7 +468,14 @@ def build_app(settings: Settings) -> web.Application:
             return web.Response(status=404, text="realtime v3 (/live) is not supported by this shim")
         return web.Response(status=404, text="not found")
 
+    def register(session: VoiceSession) -> None:
+        key = session.call_id or session.session_id
+        app["sessions"][key] = session
+        session.on_closed = lambda: app["sessions"].pop(key, None)
+
     async def create_call(request: web.Request) -> web.Response:
+        if (request.content_length or 0) > MAX_CALL_BODY:
+            return web.Response(status=413, text="offer too large")
         sdp: Optional[str] = None
         session_json: dict = {}
         ctype = request.content_type
@@ -466,15 +502,14 @@ def build_app(settings: Settings) -> web.Application:
         session = VoiceSession(settings, call_id)
         session.session_type = session_json.get("type") or "quicksilver"
         session.dialect = "v1" if session.session_type == "quicksilver" else "v2"
-        app["sessions"][call_id] = session
+        register(session)
         log.info("[%s] call created (session type %s, query %s)", call_id, session.session_type,
                  dict(request.query) or "{}")
         try:
             answer = await session.start_webrtc(sdp)
         except Exception:  # noqa: BLE001
             log.exception("[%s] WebRTC answer failed", call_id)
-            app["sessions"].pop(call_id, None)
-            await session.close()  # releases the peer connection
+            await session.close()  # releases the peer connection and the registry entry
             return web.Response(status=500, text="webrtc negotiation failed")
         session.spawn(expire_if_orphaned(session), f"expire-{call_id}")
         location = f"{settings.location_prefix}/realtime/calls/{call_id}"
@@ -488,19 +523,22 @@ def build_app(settings: Settings) -> web.Application:
             return
         log.warning("[%s] no sideband after %.0fs; dropping the call", session.tag,
                     settings.orphan_call_timeout_s)
-        app["sessions"].pop(session.call_id, None)
         await session.close()
 
     async def realtime_ws(request: web.Request) -> web.StreamResponse:
         call_id = request.query.get("call_id")
         if call_id:
             session = app["sessions"].get(call_id)
-            if session is None:
-                log.warning("sideband for unknown call id")
+            if session is None or session.closed:
+                log.warning("sideband for unknown or expired call id")
                 return web.Response(status=404, text="unknown call_id")
+            if session.ws is not None and not session.ws.closed:
+                log.warning("[%s] second sideband for the same call refused", session.tag)
+                return web.Response(status=409, text="this call already has a sideband")
+            session.attached = True  # claim it before the upgrade so the orphan timer cannot fire mid-attach
         else:
             session = VoiceSession(settings, None)
-            app["sessions"][session.session_id] = session
+            register(session)
             log.info("[%s] WebSocket transport session (no call)", session.session_id)
         ws = web.WebSocketResponse(heartbeat=20.0, max_msg_size=8 * 1024 * 1024)
         await ws.prepare(request)
@@ -508,7 +546,6 @@ def build_app(settings: Settings) -> web.Application:
             await session.run_ws(ws)
         finally:
             await session.close()
-            app["sessions"].pop(session.call_id or session.session_id, None)
         return ws
 
     app.router.add_get("/healthz", healthz)

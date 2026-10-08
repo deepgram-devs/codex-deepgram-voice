@@ -1,8 +1,9 @@
 # One service at a time. DEEPGRAM_API_KEY is read from your shell, never stored here.
 #   DEEPGRAM_API_KEY=... docker compose run --rm flux-check
 #   DEEPGRAM_API_KEY=... docker compose run --rm e2e
-#   DEEPGRAM_API_KEY=... docker compose up shim      (WebSocket transport only; see README)
+#   DEEPGRAM_API_KEY=... docker compose up shim      (the shim in a container; see README, "Run the shim in Docker")
 #   docker compose run --rm hardening-check
+#   docker compose run --rm unit-check
 services:
   shim:
     build: .
@@ -47,6 +48,12 @@ services:
     environment:
       - DEEPGRAM_API_KEY
     command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v2", "--session-type", "realtime"]
+
+  # No key and no network: session ordering, caption revision, double close, registry cleanup.
+  unit-check:
+    build: .
+    image: codex-flux-voice
+    command: ["python", "tests/unit_check.py"]
 
   # No real key needed: uses a fake key against live Flux and checks it never reaches the logs.
   hardening-check:

@@ -1,0 +1,13 @@
+$ docker compose run --rm unit-check
+ Container codex-deepgram-voice-unit-check-run-ab746e8d761b Creating 
+ Container codex-deepgram-voice-unit-check-run-ab746e8d761b Created 
+[rtc_6fbf5a53e4e75ad1375cb107] no sideband after 0s; dropping the call
+sideband for unknown or expired call id
+[prefix] PASS
+[origin] PASS
+[ordering] PASS
+[captions] PASS
+[double-close] PASS
+[registry] PASS
+RESULT: PASS {'prefix': True, 'origin': True, 'ordering': True, 'captions': True, 'double-close': True, 'registry': True}
+exit=0
