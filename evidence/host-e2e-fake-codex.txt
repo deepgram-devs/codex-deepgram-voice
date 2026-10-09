@@ -1,41 +1,41 @@
-2026-10-09 19:04:30,661 INFO fake-codex shim started in-process at http://127.0.0.1:51884/v1
-2026-10-09 19:04:30,759 INFO shim [rtc_d522d8e7bc8717d584537f96] call created (session type quicksilver, query {'intent': 'quicksilver', 'architecture': 'avas'})
-2026-10-09 19:04:30,760 INFO shim [rtc_d522d8e7bc8717d584537f96] WebRTC audio track received
-2026-10-09 19:04:30,762 INFO aiohttp.access 127.0.0.1 [09/Oct/2026:19:04:30 -0400] "POST /v1/realtime/calls?intent=quicksilver&architecture=avas HTTP/1.1" 201 2786 "-" "Python/3.12 aiohttp/3.14.3"
-2026-10-09 19:04:30,763 INFO shim [rtc_d522d8e7bc8717d584537f96] WebRTC connection state: connecting
-2026-10-09 19:04:30,764 INFO shim [rtc_d522d8e7bc8717d584537f96] sideband WebSocket attached
-2026-10-09 19:04:30,765 INFO shim [rtc_d522d8e7bc8717d584537f96] session.update type=quicksilver -> dialect v1
-2026-10-09 19:04:30,798 INFO shim [rtc_d522d8e7bc8717d584537f96] WebRTC connection state: connected
-2026-10-09 19:04:30,805 INFO shim [rtc_d522d8e7bc8717d584537f96] data channel 'oai-events' opened by Codex
-2026-10-09 19:04:30,880 INFO shim [rtc_d522d8e7bc8717d584537f96] first audio frame: 48000 Hz, stereo, 960 samples
-2026-10-09 19:04:30,880 INFO flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
-2026-10-09 19:04:31,219 INFO shim [rtc_d522d8e7bc8717d584537f96] Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
-2026-10-09 19:04:31,219 INFO flux Flux connected
-2026-10-09 19:04:31,591 INFO shim [rtc_d522d8e7bc8717d584537f96] turn 0 StartOfTurn
-2026-10-09 19:04:56,834 INFO shim [rtc_d522d8e7bc8717d584537f96] turn 0 EndOfTurn conf=0.910 -> Codex: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I thi...
-2026-10-09 19:04:56,834 INFO shim [rtc_d522d8e7bc8717d584537f96] Codex reply for handoff_2cf90e7ce6d4: Starting on it.
-2026-10-09 19:05:02,837 INFO shim [rtc_d522d8e7bc8717d584537f96] Codex closed the session
-2026-10-09 19:05:02,837 INFO shim [rtc_d522d8e7bc8717d584537f96] sideband WebSocket closed
-2026-10-09 19:05:02,840 INFO shim [rtc_d522d8e7bc8717d584537f96] audio track ended after 1442 frames
-2026-10-09 19:05:02,841 INFO shim [rtc_d522d8e7bc8717d584537f96] WebRTC connection state: closed
-2026-10-09 19:05:02,900 INFO shim [rtc_d522d8e7bc8717d584537f96] session closed after 32s, 1 handoff(s)
-2026-10-09 19:05:02,900 INFO aiohttp.access 127.0.0.1 [09/Oct/2026:19:04:30 -0400] "GET /v1/realtime?call_id=rtc_d522d8e7bc8717d584537f96&intent=quicksilver HTTP/1.1" 101 0 "-" "Python/3.12 aiohttp/3.14.3"
-POST http://127.0.0.1:51884/v1/realtime/calls?intent=quicksilver&architecture=avas -> 201, Location: /v1/realtime/calls/rtc_d522d8e7bc8717d584537f96, answer 2577 bytes
-sideband connected: ws://127.0.0.1:51884/v1/realtime?call_id=rtc_d522d8e7bc8717d584537f96&intent=quicksilver
-[  0.10s] session.updated id=sess_6c3ee1a791002345
-[  1.29s] input_transcript.delta #1: 'Yeah. Is'
-[  1.93s] input_transcript.delta #2: ' As as much as'
-[  2.65s] input_transcript.delta #3: ','
-[  2.89s] input_transcript.delta #4: ' um,'
-[  3.13s] input_transcript.delta #5: " it's worth"
-[  6.25s] input_transcript.delta #10: ' uh,'
-[  9.85s] input_transcript.delta #20: ' of'
-[ 14.65s] input_transcript.delta #30: ' um,'
-[ 18.01s] input_transcript.delta #40: ' honor the'
-[ 21.37s] input_transcript.delta #50: ' skilled'
-[ 24.73s] input_transcript.delta #60: ' opportunity'
-[ 26.17s] input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
-[ 26.17s] handoff.requested id=handoff_2cf90e7ce6d4 input_transcript="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+2026-10-09 19:22:49,545 INFO fake-codex shim started in-process at http://127.0.0.1:52285/v1
+2026-10-09 19:22:49,565 INFO shim [rtc_6ea9bbafed515b44298611a1] call created (session type quicksilver, query {'intent': 'quicksilver', 'architecture': 'avas'})
+2026-10-09 19:22:49,566 INFO shim [rtc_6ea9bbafed515b44298611a1] WebRTC audio track received
+2026-10-09 19:22:49,567 INFO aiohttp.access 127.0.0.1 [09/Oct/2026:19:22:49 -0400] "POST /v1/realtime/calls?intent=quicksilver&architecture=avas HTTP/1.1" 201 2784 "-" "Python/3.12 aiohttp/3.14.3"
+2026-10-09 19:22:49,567 INFO shim [rtc_6ea9bbafed515b44298611a1] WebRTC connection state: connecting
+2026-10-09 19:22:49,568 INFO shim [rtc_6ea9bbafed515b44298611a1] sideband WebSocket attached
+2026-10-09 19:22:49,569 INFO shim [rtc_6ea9bbafed515b44298611a1] session.update type=quicksilver -> dialect v1
+2026-10-09 19:22:49,594 INFO shim [rtc_6ea9bbafed515b44298611a1] WebRTC connection state: connected
+2026-10-09 19:22:49,596 INFO shim [rtc_6ea9bbafed515b44298611a1] data channel 'oai-events' opened by Codex
+2026-10-09 19:22:49,677 INFO shim [rtc_6ea9bbafed515b44298611a1] first audio frame: 48000 Hz, stereo, 960 samples
+2026-10-09 19:22:49,677 INFO flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+2026-10-09 19:22:49,845 INFO shim [rtc_6ea9bbafed515b44298611a1] Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
+2026-10-09 19:22:49,845 INFO flux Flux connected
+2026-10-09 19:22:50,221 INFO shim [rtc_6ea9bbafed515b44298611a1] turn 0 StartOfTurn
+2026-10-09 19:23:15,662 INFO shim [rtc_6ea9bbafed515b44298611a1] turn 0 EndOfTurn conf=0.910 -> Codex: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I thi...
+2026-10-09 19:23:15,663 INFO shim [rtc_6ea9bbafed515b44298611a1] Codex reply for handoff_e910647cd1f7: Starting on it.
+2026-10-09 19:23:21,665 INFO shim [rtc_6ea9bbafed515b44298611a1] Codex closed the session
+2026-10-09 19:23:21,666 INFO shim [rtc_6ea9bbafed515b44298611a1] sideband WebSocket closed
+2026-10-09 19:23:21,669 INFO shim [rtc_6ea9bbafed515b44298611a1] audio track ended after 1442 frames
+2026-10-09 19:23:21,669 INFO shim [rtc_6ea9bbafed515b44298611a1] WebRTC connection state: closed
+2026-10-09 19:23:21,765 INFO shim [rtc_6ea9bbafed515b44298611a1] session closed after 32s, 1 handoff(s)
+2026-10-09 19:23:21,766 INFO aiohttp.access 127.0.0.1 [09/Oct/2026:19:22:49 -0400] "GET /v1/realtime?call_id=rtc_6ea9bbafed515b44298611a1&intent=quicksilver HTTP/1.1" 101 0 "-" "Python/3.12 aiohttp/3.14.3"
+POST http://127.0.0.1:52285/v1/realtime/calls?intent=quicksilver&architecture=avas -> 201, Location: /v1/realtime/calls/rtc_6ea9bbafed515b44298611a1, answer 2575 bytes
+sideband connected: ws://127.0.0.1:52285/v1/realtime?call_id=rtc_6ea9bbafed515b44298611a1&intent=quicksilver
+[  0.02s] session.updated id=sess_eb4d5f16fc657c4d
+[  1.16s] input_transcript.delta #1: 'Yeah. Is'
+[  1.88s] input_transcript.delta #2: ' As as much as'
+[  2.60s] input_transcript.delta #3: ','
+[  2.84s] input_transcript.delta #4: ' um,'
+[  3.08s] input_transcript.delta #5: " it's worth"
+[  6.20s] input_transcript.delta #10: ' uh,'
+[  9.80s] input_transcript.delta #20: ' of'
+[ 14.60s] input_transcript.delta #30: ' um,'
+[ 17.96s] input_transcript.delta #40: ' honor the'
+[ 21.32s] input_transcript.delta #50: ' skilled'
+[ 24.68s] input_transcript.delta #60: ' opportunity'
+[ 26.12s] input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 26.12s] handoff.requested id=handoff_e910647cd1f7 input_transcript="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
 done waiting
 
 summary:

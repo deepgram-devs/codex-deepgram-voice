@@ -50,7 +50,7 @@ services:
       - DEEPGRAM_API_KEY
     command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v2", "--session-type", "realtime"]
 
-  # No key and no network: session ordering, caption revision, double close, registry cleanup.
+  # No key and no network: the eleven offline session-logic checks listed in the README table.
   unit-check:
     build: .
     image: codex-flux-voice

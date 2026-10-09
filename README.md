@@ -1,10 +1,10 @@
 # Codex CLI voice, powered by Deepgram Flux
 
-A small local shim that makes [Deepgram Flux](https://developers.deepgram.com/docs/flux/quickstart) the speech layer for Codex CLI voice mode. Press `F8` in Codex, talk through a task, and Codex starts on it the moment you stop. Flux does two things here: it transcribes the microphone audio as you speak, and its end-of-turn detection decides when you have finished a thought, so a pause to think does not cut you off and a finished sentence does not wait on a silence timer.
+A small local shim that makes [Deepgram Flux](https://developers.deepgram.com/docs/flux/quickstart) the speech layer for Codex CLI voice mode. Press `F8` in Codex, talk through a task, and Codex starts the turn when Flux reports the end of it. Flux does two things here: it transcribes the microphone audio as you speak, and its end-of-turn detection decides when you have finished a thought, so a pause to think does not cut you off and a finished sentence does not wait on a silence timer.
 
 No Codex fork and no patched binary. Codex lets you point its two realtime voice endpoints at another server. The shim listens on localhost, speaks Codex's realtime protocol, and runs Flux underneath.
 
-This is an unofficial community shim, not affiliated with or endorsed by OpenAI. The two Codex settings it relies on are marked experimental by OpenAI and may change in a future Codex release.
+This is an unofficial community shim, not affiliated with or endorsed by OpenAI. The two Codex settings it relies on are marked experimental by OpenAI and may change in a future Codex release. No session with a real microphone and the Codex TUI has been recorded yet; every check in this repo drives the shim with a fake Codex client (see [What has been verified](#what-has-been-verified)).
 
 ```
 Codex CLI (F8) --WebRTC audio--> shim on 127.0.0.1:8765 --16 kHz PCM--> Deepgram Flux
@@ -21,7 +21,7 @@ Codex CLI      <--sideband WS--- shim                    <--Update / EndOfTurn--
 - **Port 8765 free** on 127.0.0.1, or pick another with `--port` (see [Troubleshooting](#troubleshooting)). The launcher script uses `nc` to check the port.
 - **Docker**, only if you want to run the headless checks or the shim in a container.
 
-Tested on macOS with Docker Desktop. Linux should work the same way; Windows is untested.
+The headless checks were run on macOS with Docker Desktop. Linux should work the same way; Windows is untested.
 
 ## Quick start
 
@@ -43,7 +43,7 @@ Codex voice shim listening on http://127.0.0.1:8765  (calls: /v1/realtime/calls,
 Codex config: experimental_realtime_webrtc_call_base_url = "http://127.0.0.1:8765/v1", experimental_realtime_ws_base_url = "ws://127.0.0.1:8765/v1"
 ```
 
-Leave this terminal open. `Ctrl+C` stops the shim. `curl 127.0.0.1:8765/healthz` returns `{"ok": true, "sessions": 0}` while it runs. The shim exits with status 1 at startup if `DEEPGRAM_API_KEY` is not set. `-v` prints every Flux turn event, which is what you want the first time; drop it later for a quieter log.
+Leave this terminal open. `Ctrl+C` stops the shim. `curl 127.0.0.1:8765/healthz` returns `{"ok": true, "sessions": 0}` while it runs. The shim exits with status 1 at startup if `DEEPGRAM_API_KEY` is not set. `-v` prints every Flux turn event; drop it later for a quieter log.
 
 ### 2. Start Codex pointed at the shim
 
@@ -82,16 +82,16 @@ turn 0 EndOfTurn conf=0.8xx -> Codex: Create a file called hello.txt that says h
 Codex reply for handoff_...: ...
 ```
 
-In Codex you should see the live caption while you speak, then the finished transcript, then the turn running.
+In Codex you should see the live caption while you speak, then the finished transcript, then the turn running. In the log, a *call* is the WebRTC connection Codex opens and a *session* is the voice session it belongs to; one call, one session.
 
 ## Troubleshooting
 
 Each row names the log line to look for in the shim terminal.
 
-| What you see | Shim log line | What to do |
+| What you see | Shim output | What to do |
 | --- | --- | --- |
 | The shim exits immediately | `error: DEEPGRAM_API_KEY is not set` | Export the key in that shell and start the shim again. |
-| The shim refuses to start with `--host` | `error: --host '0.0.0.0' is not a loopback address` | Use the default `127.0.0.1`. The shim has no client authentication, so a non-loopback bind needs `--allow-unauthenticated-remote`, which is only for a container whose port is published on 127.0.0.1 (see Privacy and keys). |
+| The shim exits with status 2 | `error: --host '0.0.0.0' is not a loopback address` | For a local run, use the default `127.0.0.1`. Inside a container, the image already passes `--allow-unauthenticated-remote`; publish the port as `127.0.0.1:8765:8765` (see [Privacy and keys](#privacy-and-keys)). |
 | Codex shows an error right after `F8` | `Deepgram rejected the API key (HTTP 401)` | Check the key in `DEEPGRAM_API_KEY`, then restart the shim. |
 | Codex shows an error mid-session | `Deepgram Flux error: ...` or `Deepgram Flux closed the stream unexpectedly` | Read the detail in the log, then press `F8` to start a new voice session. |
 | The launcher refuses to start | `shim is not listening on 127.0.0.1:8765` | Start the shim first (step 1). If it runs on another port, set `SHIM_PORT`. |
@@ -169,8 +169,8 @@ Every check is also a `compose.yaml` service. `DEEPGRAM_API_KEY` must be exporte
 | `flux-check` | yes | The sample clip against live Flux: one `EndOfTurn` |
 | `e2e` | yes | The full Codex protocol path through the shim, WebRTC and sideband |
 | `ws-check-v1`, `ws-check-v2`, `ws-check-v2-handoff` | yes | The plain WebSocket transport in the v1 shape, the v2 transcription shape, and the v2 realtime shape with its `background_agent` handoff |
-| `hardening-check` | no | Missing-key exit, cross-origin 403, orphaned-call expiry, a bad key producing one `error` event with no key in the `-v` output, that error reaching a call whose sideband attaches late, a client that never sends `session.update` being closed with code 1008 before any Flux connection, and a non-loopback bind being refused without `--allow-unauthenticated-remote` |
-| `unit-check` | no | Offline session logic: event ordering before `session.updated`, caption revision, empty turns, concurrent and immediate close, the resampler tail reaching Flux, the pre-`session.update` queue cap, loopback detection, registry cleanup |
+| `hardening-check` | no (needs network) | Missing-key exit, cross-origin 403, orphaned-call expiry, a bad key producing one `error` event with no key in the `-v` output, that error reaching a call whose sideband attaches late, a client that never sends `session.update` being closed with code 1008 before any Flux connection, and a non-loopback bind being refused without `--allow-unauthenticated-remote` |
+| `unit-check` | no | Offline session logic: caption prefix at word boundaries, the Origin filter, event ordering before `session.updated`, caption revision, empty turns, concurrent and immediate close, the resampler tail reaching Flux, the pre-`session.update` queue cap, loopback detection, close paths that must still release the session, registry cleanup and the second-sideband 409 |
 
 ```bash
 docker compose run --rm hardening-check
@@ -179,7 +179,7 @@ docker compose run --rm e2e
 
 ### Run the shim in Docker
 
-`docker compose up shim` starts the shim in a container, published on 127.0.0.1:8765 only. Inside the container the shim must bind `0.0.0.0` for the port mapping to work, so the image's default command passes `--allow-unauthenticated-remote`; the compose port mapping is what keeps it off your network. On macOS, Docker Desktop does not carry WebRTC media from Codex into a container, so the containerized shim serves the plain WebSocket transport only and the real microphone session needs the host venv from the quick start. On Linux with host networking the WebRTC path should work as well; that has not been tested here.
+`docker compose up shim` starts the shim in a container, published on 127.0.0.1:8765 only. Inside the container the shim must bind `0.0.0.0` for the port mapping to work, so the image's default command passes `--allow-unauthenticated-remote`. `compose.yaml` publishes the port on `127.0.0.1:8765` only, which is what keeps it off your network. On macOS, Docker Desktop does not carry WebRTC media from Codex into a container, so the containerized shim serves the plain WebSocket transport only and the real microphone session needs the host venv from the quick start. On Linux, `docker run --network host` with the command overridden to `python -m shim.server` (the default `127.0.0.1` bind, no flag) should carry the WebRTC path as well; that has not been tested here. Do not combine host networking with the image's default command, which binds every interface.
 
 ## How it works
 
@@ -197,12 +197,12 @@ How the shim knows what Codex expects, with citations into the Codex source, is 
 
 ## What has been verified
 
-Every check under `tests/` was run against the live Flux API, in Docker and in a host venv, and the trimmed output is under `evidence/`:
+Every check under `tests/` was run in Docker and in a host venv, and the trimmed output is under `evidence/`. All of them except `unit_check.py` reach the live Flux API:
 
 - `wav_to_flux.py` on the sample clip: one `EndOfTurn`, at confidence 0.820 with `eot_threshold` 0.8 and 0.778 with the Flux default of 0.7. The clip's filler pauses ("um", "uh") peaked at 0.340 and never ended the turn.
 - `e2e_fake_codex.py`: the full WebRTC call, sideband WebSocket, caption deltas, `turn_marked`, and one `handoff.requested` carrying the finished transcript, ending in `RESULT: PASS`.
 - `ws_transport_check.py` in the v1 shape, the v2 transcription shape, and the v2 realtime shape that hands off through a `background_agent` function call.
-- `hardening_check.py` (seven checks) and `unit_check.py` (ten checks), as described in the table above.
+- `hardening_check.py` (seven checks) and `unit_check.py` (eleven checks), as described in the table above.
 
 Not yet recorded: a session with a real microphone and the Codex TUI. The headless checks drive the shim with a fake Codex client built from the same source citations. The log sequence in [step 3](#3-talk) is what that session should produce, and the 10-minute test above is the matching check for turn detection.
 
@@ -210,11 +210,11 @@ Not yet recorded: a session with a real microphone and the Codex TUI. The headle
 
 - `DEEPGRAM_API_KEY` is read from the environment only. Nothing in this repo stores it, and Docker gets it with `-e DEEPGRAM_API_KEY`.
 - Codex sends its own auth headers to the shim (it thinks it is talking to OpenAI). The shim ignores and never logs them.
-- The shim is localhost-only. It binds `127.0.0.1` by default and refuses any other `--host` unless you pass `--allow-unauthenticated-remote`.
+- The shim is localhost-only. It binds `127.0.0.1` by default and refuses any non-loopback `--host` unless you pass `--allow-unauthenticated-remote` (exit status 2 otherwise).
 - There is no client authentication, and none can be added: Codex decides which headers it sends, so the shim cannot ask it for a shared secret. Anyone who can reach the port can stream audio on your Deepgram key and read the transcripts. Exposing the shim beyond your machine is unsupported.
 - Requests carrying a browser Origin other than localhost get 403. That stops a web page you visit from opening Flux sessions on your key; it is not authentication, since Codex itself sends no Origin and any non-browser client can omit one.
 - In Docker the shim must bind `0.0.0.0` inside the container, so the image's default command passes `--allow-unauthenticated-remote`. `compose.yaml` publishes the port on `127.0.0.1:8765` only, which is what keeps it off your network. A bare `docker run -p 8765:8765` would publish it on every interface and the shim cannot see the mapping from inside; use `-p 127.0.0.1:8765:8765`.
-- A sideband that never sends `session.update` is closed after 10 seconds, and events queued before it are capped, so a misbehaving client cannot hold a session open or grow it without bound.
+- A sideband or WebSocket client that never sends `session.update` is closed after 10 seconds (close code 1008), and the events queued before it are capped at 2048 events or 1 MiB, so a misbehaving client cannot hold a session open or grow it without bound.
 - `-v` turns on debug logging for the shim. It does not print your API key.
 
 ## Files

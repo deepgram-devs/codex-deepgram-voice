@@ -1,10 +1,10 @@
-connected ws://127.0.0.1:51892/v1/realtime?intent=quicksilver (dialect v1, session type quicksilver)
-[  0.02s] session.updated {'id': 'sess_f271e92be7a32ca6', 'type': 'quicksilver'}
-[  1.11s] conversation.input_transcript.delta: 'Yeah. Is'
-[  1.91s] conversation.input_transcript.delta: ' As as much as'
-[  2.67s] conversation.input_transcript.delta: ','
-[ 27.35s] conversation.input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
-[ 27.35s] conversation.handoff.requested: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+connected ws://127.0.0.1:52302/v1/realtime?intent=quicksilver (dialect v1, session type quicksilver)
+[  0.02s] session.updated {'id': 'sess_5ff7d102a2878161', 'type': 'quicksilver'}
+[  1.08s] conversation.input_transcript.delta: 'Yeah. Is'
+[  1.84s] conversation.input_transcript.delta: ' As as much as'
+[  2.60s] conversation.input_transcript.delta: ','
+[ 27.20s] conversation.input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 27.20s] conversation.handoff.requested: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
 
 summary:
   session.updated: 1, caption deltas: 60, done events: 1, handoffs: 1, other: []

@@ -1,6 +1,6 @@
 $ docker compose run --rm hardening-check
- Container codex-deepgram-voice-hardening-check-run-80801d3f4688 Creating
- Container codex-deepgram-voice-hardening-check-run-80801d3f4688 Created
+ Container codex-deepgram-voice-hardening-check-run-be33cb07f07a Creating
+ Container codex-deepgram-voice-hardening-check-run-be33cb07f07a Created
 [missing-key]
   exit code 1, stderr: 'error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the shim again.'
   -> PASS
@@ -15,13 +15,13 @@ WARNING:shim:rejected GET /v1/realtime from non-local Origin
   WS   Origin='http://localhost.evil.example'  -> 403 (want 403)
 WARNING:shim:rejected GET /v1/realtime from non-local Origin
   WS   Origin='null'                           -> 403 (want 403)
-WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
   POST Origin='https://evil.example'           -> 403 (want 403)
+WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
   POST Origin=None                             -> 400 (want 400)
   -> PASS
 [orphan]
-  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_0221e9f6255b608b722aca6b
-WARNING:shim:[rtc_0221e9f6255b608b722aca6b] no sideband after 2s; dropping the call
+  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_6c199bed176c00903f1fc8fa
+WARNING:shim:[rtc_6c199bed176c00903f1fc8fa] no sideband after 2s; dropping the call
   sessions right after the call: 1, after 2.5s: 0
   -> PASS
 [bad-key]
@@ -37,12 +37,12 @@ WARNING:shim:[rtc_0221e9f6255b608b722aca6b] no sideband after 2s; dropping the c
   Flux rejected the key before the sideband attached: True
   -> PASS
 [no-session-update]
-WARNING:shim:[sess_962fc15d0d92706a] audio before session.update ignored
-WARNING:shim:[sess_962fc15d0d92706a] no session.update after 1s; closing the sideband
+WARNING:shim:[sess_9ecc3086031ed76b] audio before session.update ignored
+WARNING:shim:[sess_9ecc3086031ed76b] no session.update after 1s; closing the sideband
   sessions while streaming: 1, Flux opened: False, frames received: [], close code: 1008, sessions after: 0
   -> PASS
 [remote-bind]
-  without the flag: exit code 2, stderr: "error: --host '0.0.0.0' is not a loopback address. The shim has no client authentication, so it only binds 127.0.0.1 by default. Pass --allow-unauthenticated-remote if the port is published on 127.0.0.1 by a container."
+  without the flag: exit code 2, stderr: "error: --host '0.0.0.0' is not a loopback address. The shim has no client authentication, so it only binds 127.0.0.1 by default. Pass --allow-unauthenticated-remote only inside a container whose port is published on 127.0.0.1."
   with the flag: /healthz answered, startup warning logged: True
   -> PASS
 RESULT: PASS {'missing-key': True, 'origin': True, 'orphan': True, 'bad-key': True, 'late-sideband': True, 'no-session-update': True, 'remote-bind': True}
