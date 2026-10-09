@@ -1,0 +1,22 @@
+$ docker compose run --rm unit-check
+ Container codex-deepgram-voice-unit-check-run-873415d2cbf2 Creating
+ Container codex-deepgram-voice-unit-check-run-873415d2cbf2 Created
+waiting for the Flux reader failed: reader failed
+[rtc_tail] audio before session.update ignored
+[rtc_cap] 5 events (329 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap] 3 events (197 bytes) queued and Codex never sent session.update; closing the session
+[rtc_3d8c146d7bbd53e5a511a84d] second sideband for the same call refused
+sideband for unknown or expired call id
+[prefix] PASS
+[origin] PASS
+[ordering] PASS
+[captions] PASS
+[double-close] PASS
+[immediate-close] PASS
+[tail] PASS
+[queue-cap] PASS
+[loopback] PASS
+[close-paths] PASS
+[registry] PASS
+RESULT: PASS {'prefix': True, 'origin': True, 'ordering': True, 'captions': True, 'double-close': True, 'immediate-close': True, 'tail': True, 'queue-cap': True, 'loopback': True, 'close-paths': True, 'registry': True}
+exit=0
