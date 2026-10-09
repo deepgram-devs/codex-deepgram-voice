@@ -141,6 +141,8 @@ class VoiceSession:
         self.flux_failed = False  # Flux could not start or died; stop feeding, error sent once
         self._tasks: set[asyncio.Task] = set()  # strong refs to the pump and expiry tasks
         self._ws_resampler = av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
+        self._rtc_resampler = av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
+        self.turn_index = -1  # Flux turn_index of the turn in progress, -1 between turns
         self._deadline: Optional[asyncio.Task] = None  # session.update deadline for the sideband
         self._audio_before_update_warned = False
         self._started = time.monotonic()
@@ -237,10 +239,19 @@ class VoiceSession:
         for out in tail:
             await self.feed_pcm16_16k(out.to_ndarray().tobytes())
 
+    def _fresh(self) -> av.AudioResampler:
+        return av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
+
     async def _drain_ws_audio(self) -> None:
         """End of the WebSocket audio stream: drain, then start a fresh resampler for any more."""
-        resampler, self._ws_resampler = self._ws_resampler, av.AudioResampler(
-            format="s16", layout="mono", rate=SAMPLE_RATE)  # a drained resampler raises EOFError on reuse
+        # The swap and the drain share no await, so a frame that arrives meanwhile goes to the
+        # fresh resampler; a drained one raises EOFError on reuse.
+        resampler, self._ws_resampler = self._ws_resampler, self._fresh()
+        await self._drain(resampler)
+
+    async def _drain_rtc_audio(self) -> None:
+        """End of the WebRTC audio stream, or session close before the track ended."""
+        resampler, self._rtc_resampler = self._rtc_resampler, self._fresh()
         await self._drain(resampler)
 
     async def start_webrtc(self, offer_sdp: str) -> str:
@@ -269,7 +280,6 @@ class VoiceSession:
         return pc.localDescription.sdp
 
     async def _pump_track(self, track) -> None:
-        resampler = av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
         frames = 0
         try:
             while not self.closed:
@@ -278,13 +288,13 @@ class VoiceSession:
                 if frames == 1:
                     log.info("[%s] first audio frame: %s Hz, %s, %d samples", self.tag,
                              frame.sample_rate, frame.layout.name, frame.samples)
-                for out in resampler.resample(frame):
+                for out in self._rtc_resampler.resample(frame):
                     await self.feed_pcm16_16k(out.to_ndarray().tobytes())
         except MediaStreamError:
             log.info("[%s] audio track ended after %d frames", self.tag, frames)
         except Exception:  # noqa: BLE001
             log.exception("[%s] audio pump failed", self.tag)
-        await self._drain(resampler)  # the resampler can hold the last few samples back
+        await self._drain_rtc_audio()  # the resampler can hold the last few samples back
         if self.flux is not None and not self.closed and not self.flux_failed:
             # Let Flux settle the final turn before the sideband goes away.
             await self.flux.close()
@@ -295,6 +305,12 @@ class VoiceSession:
         conf = info.end_of_turn_confidence
         conf_s = f"{conf:.3f}" if isinstance(conf, (int, float)) else "n/a"
         if info.event == "StartOfTurn":
+            if info.turn_index == self.turn_index:
+                # A second StartOfTurn for the turn in progress (Flux numbers turns from 0 and
+                # never reuses an index within a stream): keep the captions already shown.
+                log.debug("[%s] turn %d repeated StartOfTurn ignored", self.tag, info.turn_index)
+                return
+            self.turn_index = info.turn_index
             self.last_sent = ""
             self.prev_update = ""
             self.turn_item_id = f"item_{secrets.token_hex(6)}"
@@ -315,6 +331,7 @@ class VoiceSession:
             return
         if info.event == "EndOfTurn":
             text = info.transcript.strip()
+            self.turn_index = -1
             if not text:
                 self.last_sent = ""
                 self.prev_update = ""
@@ -384,7 +401,7 @@ class VoiceSession:
             return
         try:
             await self.ws.send_json(event)
-        except ConnectionResetError:
+        except (ConnectionResetError, RuntimeError):  # aiohttp: closing transport / socket not prepared
             self._queue(event)
 
     def _queue(self, event: dict) -> None:
@@ -421,13 +438,14 @@ class VoiceSession:
                     break
             elif msg.type == WSMsgType.BINARY:
                 if self._audio_allowed():
-                    await self.feed_pcm16_16k(bytes(msg.data))  # not a Codex shape; accept anyway
+                    await self.feed_pcm16_16k(bytes(msg.data))  # not a Codex shape; accepted once initialized
             elif msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.ERROR):
                 break
         log.info("[%s] sideband WebSocket closed", self.tag)
-        self._cancel_deadline()
-        self.ws = None
-        self.ready = False
+        if self.ws is ws:  # a second sideband that slipped in before this one ended keeps its state
+            self._cancel_deadline()
+            self.ws = None
+            self.ready = False
 
     async def _session_update_deadline(self, ws: web.WebSocketResponse) -> None:
         await asyncio.sleep(self.settings.session_update_timeout_s)
@@ -472,12 +490,12 @@ class VoiceSession:
                 while self.pending:
                     try:
                         await ws.send_json(self.pending[0])
-                    except ConnectionResetError:
-                        return False  # the sideband went away: keep the rest, in order, for the next one
+                    except (ConnectionResetError, RuntimeError):
+                        return False  # the sideband went away mid-flush; the handler closes the session
                     self.pending_bytes -= len(json.dumps(self.pending.pop(0)))
                 self.ready = True
                 self._cancel_deadline()
-            except ConnectionResetError:
+            except (ConnectionResetError, RuntimeError):
                 return False
             finally:
                 self.flushing = False
@@ -509,30 +527,49 @@ class VoiceSession:
         if self.closed or self._closing:
             return
         self._closing = True
-        if self.flux is not None and not self.flux_failed:
-            try:
-                await self._drain_ws_audio()  # Codex's WebSocket transport never sends commit
-            except Exception:  # noqa: BLE001
-                log.exception("[%s] final drain failed", self.tag)
-        self.closed = True
-        self._cancel_deadline()
-        if self.flux is not None:
-            try:
-                await self.flux.close(wait_s=3.0)
-            except Exception:  # noqa: BLE001
-                log.exception("[%s] Flux close failed", self.tag)
-        if self.pc is not None:
-            await self.pc.close()
-        if self.ws is not None and not self.ws.closed:
-            await self.ws.close()
-        current = asyncio.current_task()
-        for task in list(self._tasks):
-            if task is not current:
-                task.cancel()  # the pump is idle once `closed` is set; this just reaps it
-        log.info("[%s] session closed after %.0fs, %d handoff(s)", self.tag,
-                 time.monotonic() - self._started, self.handoffs)
-        if self.on_closed is not None:
-            self.on_closed()
+        try:
+            if self.flux is not None and not self.flux_failed:
+                try:
+                    # Codex's WebSocket transport never sends commit, and a call can end before
+                    # its track does: send what both resamplers still hold. Audio that arrives
+                    # after this point belongs to no turn and is dropped.
+                    await self._drain_ws_audio()
+                    await self._drain_rtc_audio()
+                except Exception:  # noqa: BLE001
+                    log.exception("[%s] final drain failed", self.tag)
+        finally:
+            # Everything below runs even if the drain was cancelled: the Flux socket, the peer
+            # connection, and the registry entry must not outlive the session.
+            self.closed = True
+            self._cancel_deadline()
+            await self._teardown()
+
+    async def _teardown(self) -> None:
+        try:
+            if self.flux is not None:
+                try:
+                    await self.flux.close(wait_s=3.0)
+                except Exception:  # noqa: BLE001
+                    log.exception("[%s] Flux close failed", self.tag)
+            if self.pc is not None:
+                try:
+                    await self.pc.close()
+                except Exception:  # noqa: BLE001
+                    log.exception("[%s] peer connection close failed", self.tag)
+            if self.ws is not None and not self.ws.closed:
+                try:
+                    await self.ws.close()
+                except Exception:  # noqa: BLE001
+                    log.exception("[%s] sideband close failed", self.tag)
+            current = asyncio.current_task()
+            for task in list(self._tasks):
+                if task is not current:
+                    task.cancel()  # the pump is idle once `closed` is set; this just reaps it
+            log.info("[%s] session closed after %.0fs, %d handoff(s)", self.tag,
+                     time.monotonic() - self._started, self.handoffs)
+        finally:
+            if self.on_closed is not None:  # the registry entry goes whatever happened above
+                self.on_closed()
 
 
 # ---- HTTP layer --------------------------------------------------------------------
@@ -633,6 +670,7 @@ def build_app(settings: Settings) -> web.Application:
             register(session)
             log.info("[%s] WebSocket transport session (no call)", session.session_id)
         ws = web.WebSocketResponse(heartbeat=20.0, max_msg_size=8 * 1024 * 1024)
+        session.ws = ws  # claimed before the upgrade awaits, so a concurrent second sideband sees it
         await ws.prepare(request)
         try:
             await session.run_ws(ws)
@@ -647,17 +685,21 @@ def build_app(settings: Settings) -> web.Application:
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Codex CLI voice -> Deepgram Flux STT shim")
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="address to bind (default 127.0.0.1; anything non-loopback needs "
+                         "--allow-unauthenticated-remote)")
+    ap.add_argument("--port", type=int, default=8765, help="port to listen on (default 8765)")
     ap.add_argument("--eot-threshold", type=float, default=0.8,
                     help="Flux eot_threshold (default 0.8; Flux default is 0.7)")
     ap.add_argument("--eot-timeout-ms", type=int, default=6000,
                     help="Flux eot_timeout_ms (default 6000; Flux default is 5000)")
-    ap.add_argument("--eager-eot-threshold", type=float, default=None)
+    ap.add_argument("--eager-eot-threshold", type=float, default=None,
+                    help="Flux eager_eot_threshold (off by default: Codex cannot take a turn back)")
     ap.add_argument("--keyterm", action="append", default=[], help="repeatable Flux keyterm")
     ap.add_argument("--no-live-captions", action="store_true",
                     help="only send the finished transcript, no live deltas")
-    ap.add_argument("--verbose", "-v", action="store_true")
+    ap.add_argument("--verbose", "-v", action="store_true",
+                    help="debug logging, including every Flux turn event")
     ap.add_argument("--allow-unauthenticated-remote", action="store_true",
                     help="bind a non-loopback --host. The shim has no client authentication: anyone "
                          "who can reach the port can stream audio on your DEEPGRAM_API_KEY. Meant "
@@ -670,7 +712,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not is_loopback(args.host) and not args.allow_unauthenticated_remote:
         print(f"error: --host {args.host!r} is not a loopback address. The shim has no client "
               "authentication, so it only binds 127.0.0.1 by default. Pass "
-              "--allow-unauthenticated-remote if the port is published on 127.0.0.1 by a container.",
+              "--allow-unauthenticated-remote only inside a container whose port is published on 127.0.0.1.",
               file=sys.stderr)
         sys.exit(2)
     if not os.environ.get("DEEPGRAM_API_KEY", "").strip():

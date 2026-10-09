@@ -5,22 +5,29 @@
   ordering      Flux events that arrive before Codex's session.update wait in the queue and go
                 out after session.updated, in order; later events go out directly
   captions      a Flux revision of an already-shown word appends from the stable prefix, and
-                the handoff carries the exact final transcript; an empty EndOfTurn sends nothing
+                the handoff carries the exact final transcript; an empty EndOfTurn sends nothing;
+                a repeated StartOfTurn for the same turn does not re-send captions
   double-close  FluxSession.close() called twice at once closes the socket once and raises nothing
   immediate-close
-                FluxSession.close() right after start(), before the reader's first tick, and
-                close() while the reader task is failing: the socket is closed exactly once,
-                nothing is raised, and `closed` is set
+                FluxSession.close() right after start(), before the reader's first tick; close()
+                while the reader task is failing; close() called from inside the reader task; and
+                Flux dropping the socket mid-stream: the socket is closed exactly once, nothing is
+                raised, `closed` is set, and the drop reaches on_error
   tail          the samples a resampler holds back reach Flux: input_audio_buffer.commit and
-                session close drain the WebSocket resampler, the WebRTC pump drains its own, and
-                audio after a commit still flows; before session.update, audio is ignored
+                session close drain the WebSocket resampler, the WebRTC path drains its own at
+                track end and at session close, and audio after a commit still flows; before
+                session.update, audio is ignored
   queue-cap     Flux events queued before session.update stop at the configured cap and the
-                session closes instead of growing without bound
+                session closes, driven by a real FluxSession reader so the close runs off the
+                reader task and still closes the Flux socket
   loopback      is_loopback(): 127.0.0.1, 127.1.2.3, ::1, localhost pass; 0.0.0.0, LAN
                 addresses, hostnames, and "" fail
+  close-paths   VoiceSession.close() still closes Flux and drops the registry entry when the
+                peer connection refuses to close, and when close() itself is cancelled mid-drain
   registry      a call whose sideband never attaches is dropped at the expiry window and leaves
-                no entry behind (/healthz reports 0, a late sideband gets 404); an oversized
-                offer is refused with 413 before it is read
+                no entry behind (/healthz reports 0, a late sideband gets 404); two sidebands
+                opened at once for one call get one 101 and one 409; an oversized offer is
+                refused with 413 before it is read
 
 Usage:
   python tests/unit_check.py
@@ -31,11 +38,14 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import sys
 from pathlib import Path
 
 import av
 import numpy as np
+import websockets.exceptions
+from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,11 +72,14 @@ class FakeSideband:
 
 
 class FakeFluxSocket:
-    """Stands in for the websockets client connection: records sends, yields no messages."""
+    """Stands in for the websockets client connection: records sends, yields `messages` (JSON
+    text frames) to the reader, then ends the stream (or raises `final` if given)."""
 
-    def __init__(self) -> None:
+    def __init__(self, messages: list[dict] | None = None, final: Exception | None = None) -> None:
         self.closes = 0
         self.sent: list[bytes | str] = []
+        self.messages = list(messages or [])
+        self.final = final
 
     async def send(self, data) -> None:
         self.sent.append(data)
@@ -78,7 +91,39 @@ class FakeFluxSocket:
         return self
 
     async def __anext__(self):
+        await asyncio.sleep(0)
+        if self.messages:
+            return json.dumps(self.messages.pop(0))
+        if self.final is not None:
+            raise self.final
         raise StopAsyncIteration
+
+
+class CapturedLog:
+    """Collects the records a logger emits at or above `level` while the block runs."""
+
+    def __init__(self, name: str, level: int) -> None:
+        self.logger = logging.getLogger(name)
+        self.handler = logging.Handler(level)
+        self.records: list[logging.LogRecord] = []
+        self.handler.emit = self.records.append  # type: ignore[method-assign]
+
+    def __enter__(self) -> "CapturedLog":
+        self.logger.addHandler(self.handler)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.logger.removeHandler(self.handler)
+
+
+class BrokenPeerConnection:
+    async def close(self) -> None:
+        raise RuntimeError("peer connection refused to close")
+
+
+def flux_update(index: int, transcript: str) -> dict:
+    return {"type": "TurnInfo", "event": "Update", "turn_index": index, "transcript": transcript,
+            "end_of_turn_confidence": 0.1}
 
 
 class StubFlux:
@@ -95,6 +140,18 @@ class StubFlux:
     async def close(self, wait_s: float = 8.0) -> None:
         self.closing = True
         self.closes += 1
+
+
+class BlockingFlux(StubFlux):
+    """A Flux stub whose feed() blocks until released, to park close() inside its drain."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def feed(self, pcm: bytes) -> None:
+        await self.release.wait()
+        await super().feed(pcm)
 
 
 def pcm_b64(samples: int) -> str:
@@ -188,14 +245,26 @@ async def check_captions() -> bool:
     if len(ws.sent) != before:
         print(f"  empty EndOfTurn sent {[e['type'] for e in ws.sent[before:]]}")
         ok = False
+    # A second StartOfTurn for the same turn keeps the captions already shown.
+    await s.on_turn(turn("StartOfTurn", "", index=2))
+    await s.on_turn(turn("Update", "Open the", index=2))
+    await s.on_turn(turn("Update", "Open the file", index=2))
+    shown_before = len([e for e in ws.sent if e["type"].endswith(".delta")])
+    await s.on_turn(turn("StartOfTurn", "", index=2))
+    await s.on_turn(turn("Update", "Open the file", index=2))
+    await s.on_turn(turn("Update", "Open the file now", index=2))
+    deltas2 = [e["delta"] for e in ws.sent if e["type"].endswith(".delta")][shown_before:]
+    if "".join(deltas2).lstrip().startswith("Open the"):
+        print(f"  repeated StartOfTurn re-sent captions: {deltas2}")
+        ok = False
     return ok
 
 
 async def check_double_close() -> bool:
     f = FluxSession(lambda info: asyncio.sleep(0))
-    sock = FakeFluxSocket()
+    sock = FakeFluxSocket([flux_update(0, "one"), flux_update(0, "one two")])
     f._ws = sock  # type: ignore[assignment]
-    f._reader = asyncio.create_task(asyncio.sleep(0.05))
+    f._reader = asyncio.create_task(f._read_loop(sock))  # type: ignore[arg-type]
     f._pending.extend(b"\x00" * 100)
     try:
         await asyncio.gather(f.close(wait_s=2.0), f.close(wait_s=2.0))
@@ -241,6 +310,41 @@ async def check_immediate_close() -> bool:
         ok = False
     if sock.closes != 1 or not f.closed.is_set():
         print(f"  failing reader: socket closed {sock.closes} time(s), closed set {f.closed.is_set()}")
+        ok = False
+    # close() from inside the reader task (a Flux event handler decides to end the session):
+    # the reader cannot wait on itself; the socket must still close once and nothing may raise.
+    f = FluxSession(lambda info: asyncio.sleep(0))
+    sock = FakeFluxSocket()
+    f._ws = sock  # type: ignore[assignment]
+    outcome: list[str] = []
+    warnings = CapturedLog("flux", logging.WARNING)
+
+    async def reader_that_closes() -> None:
+        try:
+            await f.close(wait_s=2.0)
+            outcome.append("ok")
+        except Exception as exc:  # noqa: BLE001
+            outcome.append(f"{type(exc).__name__}: {exc}")
+    with warnings:
+        f._reader = asyncio.create_task(reader_that_closes())
+        await asyncio.wait_for(f._reader, timeout=5.0)
+    if outcome != ["ok"] or sock.closes != 1 or not f.closed.is_set() or warnings.records:
+        print(f"  close from the reader task: {outcome}, socket closed {sock.closes} time(s), "
+              f"warnings: {[r.getMessage() for r in warnings.records]}")
+        ok = False
+    # Flux drops the socket mid-stream: on_error is told once, and close() still works.
+    errors: list[str] = []
+
+    async def on_error(message: str) -> None:
+        errors.append(message)
+    f = FluxSession(lambda info: asyncio.sleep(0), on_error=on_error)
+    sock = FakeFluxSocket(final=websockets.exceptions.ConnectionClosedError(None, None))
+    f._ws = sock  # type: ignore[assignment]
+    f._reader = asyncio.create_task(f._read_loop(sock))  # type: ignore[arg-type]
+    await asyncio.wait_for(f._reader, timeout=5.0)
+    await f.close(wait_s=2.0)
+    if len(errors) != 1 or "unexpectedly" not in errors[0] or sock.closes != 1:
+        print(f"  unexpected Flux drop: on_error got {errors}, socket closed {sock.closes} time(s)")
         ok = False
     return ok
 
@@ -289,41 +393,49 @@ async def check_tail() -> bool:
     if s.flux.closes != 1:
         print(f"  Flux closed {s.flux.closes} time(s) on session close")
         ok = False
-    # The WebRTC pump's resampler: a 48 kHz frame that is not a multiple of the output frame.
-    s2 = VoiceSession(Settings(), "rtc_tail2")
-    s2.flux = StubFlux()  # type: ignore[assignment]
-    resampler = av.AudioResampler(format="s16", layout="mono", rate=16_000)
+    # The WebRTC path: a 48 kHz frame that is not a multiple of the output frame, drained at
+    # track end (what the pump does) and, on another session, by close() before the track ended.
     frame = av.AudioFrame.from_ndarray(np.zeros((1, 1001), dtype="<i2"), format="s16", layout="mono")
     frame.sample_rate = 48_000
-    for out in resampler.resample(frame):
-        await s2.feed_pcm16_16k(out.to_ndarray().tobytes())
-    before = len(s2.flux.fed)
-    await s2._drain(resampler)
-    after = len(s2.flux.fed)
-    if after <= before or not near(after, 1001, 48_000):
-        print(f"  WebRTC drain: {before // 2} -> {after // 2} samples, wanted ~{1001 * 16_000 / 48_000:.0f}")
-        ok = False
+    for label, finish in (("track end", lambda sess: sess._drain_rtc_audio()),
+                          ("session close", lambda sess: sess.close())):
+        s2 = VoiceSession(Settings(), "rtc_tail2")
+        s2.flux = StubFlux()  # type: ignore[assignment]
+        for out in s2._rtc_resampler.resample(frame):
+            await s2.feed_pcm16_16k(out.to_ndarray().tobytes())
+        before = len(s2.flux.fed)
+        await finish(s2)
+        after = len(s2.flux.fed)
+        if after <= before or not near(after, 1001, 48_000):
+            print(f"  WebRTC drain at {label}: {before // 2} -> {after // 2} samples, "
+                  f"wanted ~{1001 * 16_000 / 48_000:.0f}")
+            ok = False
     return ok
 
 
 async def check_queue_cap() -> bool:
-    s = VoiceSession(Settings(pending_max_events=5), "rtc_cap")
-    s.ws = FakeSideband()  # attached, but session.update never arrives
-    for i in range(8):
-        await s.emit({"type": "error", "error": {"type": "flux_error", "message": f"event {i}"}})
-    await asyncio.sleep(0.05)  # the overflow close runs as its own task
-    if len(s.pending) > 5 or not s.closed:
-        print(f"  {len(s.pending)} queued (cap 5), session closed: {s.closed}")
-        return False
-    s2 = VoiceSession(Settings(pending_max_bytes=200), "rtc_cap2")
-    s2.ws = FakeSideband()
-    for _ in range(8):
-        await s2.emit({"type": "error", "error": {"type": "flux_error", "message": "x" * 60}})
-    await asyncio.sleep(0.05)
-    if s2.pending_bytes > 200 or not s2.closed:
-        print(f"  {s2.pending_bytes} bytes queued (cap 200), session closed: {s2.closed}")
-        return False
-    return True
+    ok = True
+    for label, settings in (("5 events", Settings(pending_max_events=5)),
+                            ("200 bytes", Settings(pending_max_bytes=200))):
+        s = VoiceSession(settings, "rtc_cap")
+        s.ws = FakeSideband()  # attached, but session.update never arrives
+        # A real FluxSession whose reader delivers eight growing Updates, each a new caption
+        # delta, so the overflow close is spawned from inside the Flux reader task.
+        words = " ".join(f"word{i}" for i in range(12))
+        sock = FakeFluxSocket([flux_update(0, words[: 6 * (i + 1)]) for i in range(8)])
+        flux = FluxSession(s.on_turn, on_error=s.on_flux_error)
+        flux._ws = sock  # type: ignore[assignment]
+        flux._reader = asyncio.create_task(flux._read_loop(sock))  # type: ignore[arg-type]
+        s.flux = flux
+        await s.on_turn(turn("StartOfTurn", ""))
+        await asyncio.wait_for(flux._reader, timeout=5.0)
+        await asyncio.wait_for(asyncio.gather(*s._tasks), timeout=5.0)  # the spawned close
+        cap_ok = len(s.pending) <= 5 if "events" in label else s.pending_bytes <= 200
+        if not cap_ok or not s.closed or sock.closes != 1:
+            print(f"  cap {label}: {len(s.pending)} events / {s.pending_bytes} bytes queued, "
+                  f"session closed: {s.closed}, Flux socket closed {sock.closes} time(s)")
+            ok = False
+    return ok
 
 
 def check_loopback() -> bool:
@@ -337,6 +449,48 @@ def check_loopback() -> bool:
     return ok
 
 
+async def check_close_paths() -> bool:
+    ok = True
+    # The peer connection raises on close: Flux is still closed and the registry hook still runs.
+    s = VoiceSession(Settings(), "rtc_close1")
+    s.flux = StubFlux()  # type: ignore[assignment]
+    s.pc = BrokenPeerConnection()  # type: ignore[assignment]
+    dropped: list[str] = []
+    s.on_closed = lambda: dropped.append(s.tag)
+    with CapturedLog("shim", logging.ERROR) as errors:
+        try:
+            await s.close()
+        except Exception as exc:  # noqa: BLE001
+            print(f"  close() raised {type(exc).__name__}: {exc}")
+            ok = False
+    if not s.closed or s.flux.closes != 1 or dropped != ["rtc_close1"] or len(errors.records) != 1:
+        print(f"  broken pc: closed {s.closed}, Flux closes {s.flux.closes}, registry hook {dropped}, "
+              f"errors logged {len(errors.records)}")
+        ok = False
+    # close() is cancelled while its final drain is blocked on Flux: the session still ends.
+    s = VoiceSession(Settings(), "rtc_close2")
+    flux = BlockingFlux()
+    s.flux = flux  # type: ignore[assignment]
+    dropped = []
+    s.on_closed = lambda: dropped.append(s.tag)
+    frame = av.AudioFrame.from_ndarray(np.zeros((1, 1001), dtype="<i2"), format="s16", layout="mono")
+    frame.sample_rate = 48_000
+    s._rtc_resampler.resample(frame)  # leaves a tail, so close() has something to drain
+    closer = asyncio.create_task(s.close())
+    await asyncio.sleep(0)  # let close() reach the blocked feed()
+    closer.cancel()
+    try:
+        await closer
+        print("  cancelled close() did not raise CancelledError")
+        ok = False
+    except asyncio.CancelledError:
+        pass
+    if not s.closed or flux.closes != 1 or dropped != ["rtc_close2"]:
+        print(f"  cancelled close: closed {s.closed}, Flux closes {flux.closes}, registry hook {dropped}")
+        ok = False
+    return ok
+
+
 async def check_registry() -> bool:
     app = build_app(Settings(orphan_call_timeout_s=0.3))
     async with TestClient(TestServer(app)) as client:
@@ -345,6 +499,27 @@ async def check_registry() -> bool:
         status = r.status
         call_id = r.headers.get("Location", "").rsplit("/", 1)[-1]
         during = (await (await client.get("/healthz")).json())["sessions"]
+
+        async def sideband_status() -> int:
+            try:
+                ws = await client.ws_connect("/v1/realtime", params={"call_id": call_id})
+            except Exception as exc:  # noqa: BLE001
+                return getattr(exc, "status", -1)
+            await asyncio.sleep(0.1)  # hold it open while the other attempt is judged
+            await ws.close()
+            return 101
+        # Slow the upgrade so both requests are in flight at once, which is the window the
+        # second-sideband check has to cover.
+        real_prepare = web.WebSocketResponse.prepare
+
+        async def slow_prepare(self, request):
+            await asyncio.sleep(0.05)
+            return await real_prepare(self, request)
+        web.WebSocketResponse.prepare = slow_prepare  # type: ignore[method-assign]
+        try:
+            pair = sorted(await asyncio.gather(sideband_status(), sideband_status()))
+        finally:
+            web.WebSocketResponse.prepare = real_prepare  # type: ignore[method-assign]
         await asyncio.sleep(0.8)
         after = (await (await client.get("/healthz")).json())["sessions"]
         late = await client.get("/v1/realtime", params={"call_id": call_id})
@@ -361,6 +536,9 @@ async def check_registry() -> bool:
         ok = False
     if late_status != 404:
         print(f"  sideband for the expired call returned {late_status}, wanted 404")
+        ok = False
+    if pair != [101, 409]:
+        print(f"  two sidebands at once returned {pair}, wanted [101, 409]")
         ok = False
     if big_status != 413:
         print(f"  oversized offer returned {big_status}, wanted 413")
@@ -379,6 +557,7 @@ async def main() -> int:
         "tail": await check_tail(),
         "queue-cap": await check_queue_cap(),
         "loopback": check_loopback(),
+        "close-paths": await check_close_paths(),
         "registry": await check_registry(),
     }
     for name, ok in results.items():

@@ -189,8 +189,9 @@ class FluxSession:
                     await asyncio.wait_for(reader, timeout=wait_s)
                 except asyncio.TimeoutError:
                     log.warning("Flux reader did not finish within %.1fs; forcing close", wait_s)
-                except Exception:  # noqa: BLE001
-                    pass  # _read_loop already logged it; the socket still gets closed below
+                except Exception as exc:  # noqa: BLE001
+                    # _read_loop logs its own failures; this is for anything the wait itself raised.
+                    log.warning("waiting for the Flux reader failed: %s", exc)
         finally:
             try:
                 await ws.close()
@@ -231,6 +232,9 @@ class FluxSession:
                     log.debug("Flux message: %s", kind)
         except websockets.ConnectionClosed as exc:
             log.info("Flux socket closed: %s", exc.code)
+            if self.on_error is not None and not self.closing:
+                await self.on_error("Deepgram Flux closed the stream unexpectedly. "
+                                    "Press F8 to start a new voice session.")
         except Exception as exc:  # noqa: BLE001
             # A bug in a handler or an unexpected frame must not end the session silently.
             log.exception("Flux reader failed")
