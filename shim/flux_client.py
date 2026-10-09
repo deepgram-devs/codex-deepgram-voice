@@ -131,10 +131,13 @@ class FluxSession:
     async def start(self) -> None:
         headers = {"Authorization": f"Token {api_key_from_env()}"}
         log.info("connecting to Flux STT: %s", self.url)
-        self._ws = await websockets.connect(
+        ws = await websockets.connect(
             self.url, additional_headers=headers, max_size=None, ping_interval=20
         )
-        self._reader = asyncio.create_task(self._read_loop(), name="flux-reader")
+        self._ws = ws
+        # The reader gets its own reference: close() clears self._ws, and the reader may not
+        # have had its first tick by then.
+        self._reader = asyncio.create_task(self._read_loop(ws), name="flux-reader")
 
     async def feed(self, pcm16: bytes) -> None:
         """Append PCM16 LE 16 kHz mono; sends complete 80 ms (2560 byte) chunks."""
@@ -178,20 +181,25 @@ class FluxSession:
                 await ws.send(json.dumps({"type": "CloseStream"}))
             except websockets.ConnectionClosed:
                 pass
-            if self._reader is not None:
+            reader = self._reader
+            if reader is not None and reader is not asyncio.current_task():
+                # (a task cannot await itself: a close() from inside a Flux event handler
+                # just sends CloseStream and lets the reader finish on its own)
                 try:
-                    await asyncio.wait_for(self._reader, timeout=wait_s)
+                    await asyncio.wait_for(reader, timeout=wait_s)
                 except asyncio.TimeoutError:
                     log.warning("Flux reader did not finish within %.1fs; forcing close", wait_s)
-                    self._reader.cancel()
-            await ws.close()
+                except Exception:  # noqa: BLE001
+                    pass  # _read_loop already logged it; the socket still gets closed below
         finally:
-            self.closed.set()
+            try:
+                await ws.close()
+            finally:
+                self.closed.set()
 
-    async def _read_loop(self) -> None:
-        assert self._ws is not None
+    async def _read_loop(self, ws: websockets.ClientConnection) -> None:
         try:
-            async for message in self._ws:
+            async for message in ws:
                 if isinstance(message, (bytes, bytearray)):
                     continue
                 try:

@@ -11,6 +11,12 @@
                  with the fake key) before the sideband attaches ~3 s later; expects the one
                  queued `error` to arrive after `session.updated`, one Flux connect attempt,
                  and no trace of the key in the shim's output
+  no-session-update
+                 a WebSocket client that streams audio but never sends session.update: the
+                 audio is ignored (no Flux connection), the shim closes the socket with code
+                 1008 at the deadline, and the session leaves the registry
+  remote-bind    `--host 0.0.0.0` exits 2 without `--allow-unauthenticated-remote`; with the
+                 flag the shim starts and answers /healthz
 
 Usage:
   python tests/hardening_check.py [--key FAKE_KEY_SENTINEL] [--only origin ...]
@@ -96,6 +102,65 @@ async def check_origin() -> bool:
                 ok &= resp.status == want
     await runner.cleanup()
     return ok
+
+
+async def check_no_session_update(deadline_s: float = 1.0) -> bool:
+    runner, base = await start_in_process(Settings(session_update_timeout_s=deadline_s))
+    ws_url = "ws" + base[len("http"):] + "/v1/realtime"
+    silence = base64.b64encode(b"\x00" * (CODEX_RATE * 2 // 10)).decode()  # 100 ms at 24 kHz
+    ok = True
+    async with aiohttp.ClientSession() as http:
+        async with http.ws_connect(ws_url) as ws:
+            for _ in range(5):
+                await ws.send_json({"type": "input_audio_buffer.append", "audio": silence})
+                await asyncio.sleep(0.1)
+            sessions = list(runner.app["sessions"].values())
+            session = sessions[0] if len(sessions) == 1 else None
+            flux_opened = session is not None and session.flux is not None
+            texts = []
+            try:
+                async with asyncio.timeout(deadline_s + 2.0):
+                    async for msg in ws:
+                        if msg.type == aiohttp.WSMsgType.TEXT:
+                            texts.append(json.loads(msg.data).get("type"))
+            except TimeoutError:
+                print("  the shim never closed the socket")
+                ok = False
+            code = ws.close_code
+        await asyncio.sleep(0.2)
+        after = await session_count(http, base)
+    await runner.cleanup()
+    print(f"  sessions while streaming: {len(sessions)}, Flux opened: {flux_opened}, "
+          f"frames received: {texts}, close code: {code}, sessions after: {after}")
+    return ok and len(sessions) == 1 and not flux_opened and code == 1008 and after == 0 and not texts
+
+
+async def check_remote_bind() -> bool:
+    env = dict(os.environ, DEEPGRAM_API_KEY="FAKE_KEY_SENTINEL")  # never reaches Flux: no audio flows
+    proc = subprocess.run([sys.executable, "-m", "shim.server", "--host", "0.0.0.0", "--port", str(free_port())],
+                          cwd=ROOT, env=env, capture_output=True, text=True, timeout=20)
+    print(f"  without the flag: exit code {proc.returncode}, stderr: {proc.stderr.strip()!r}")
+    refused = proc.returncode == 2 and "loopback" in proc.stderr
+    port = free_port()
+    server = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "shim.server", "--host", "0.0.0.0", "--port", str(port),
+        "--allow-unauthenticated-remote", cwd=ROOT, env=dict(env, PYTHONUNBUFFERED="1"),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    healthy = False
+    async with aiohttp.ClientSession() as http:
+        for _ in range(50):
+            try:
+                async with http.get(f"http://127.0.0.1:{port}/healthz") as resp:
+                    healthy = resp.status == 200
+                    break
+            except aiohttp.ClientConnectionError:
+                await asyncio.sleep(0.2)
+    server.terminate()
+    out = (await server.communicate())[0].decode("utf-8", "replace")
+    warned = "no client authentication" in out
+    print(f"  with the flag: /healthz {'answered' if healthy else 'did not answer'}, "
+          f"startup warning logged: {warned}")
+    return refused and healthy and warned
 
 
 async def session_count(http: aiohttp.ClientSession, base: str) -> int:
@@ -241,7 +306,8 @@ async def check_late_sideband(key: str, late_s: float = 3.0) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--key", default="FAKE_KEY_SENTINEL", help="invalid key for the bad-key check")
-    ap.add_argument("--only", nargs="*", choices=["missing-key", "origin", "orphan", "bad-key", "late-sideband"])
+    ap.add_argument("--only", nargs="*", choices=["missing-key", "origin", "orphan", "bad-key", "late-sideband",
+                                                 "no-session-update", "remote-bind"])
     args = ap.parse_args()
     logging.basicConfig(level=logging.WARNING)
     checks = {
@@ -250,6 +316,8 @@ def main() -> int:
         "orphan": lambda: asyncio.run(check_orphan()),
         "bad-key": lambda: asyncio.run(check_bad_key(args.key)),
         "late-sideband": lambda: asyncio.run(check_late_sideband(args.key)),
+        "no-session-update": lambda: asyncio.run(check_no_session_update()),
+        "remote-bind": lambda: asyncio.run(check_remote_bind()),
     }
     results = {}
     for name, fn in checks.items():

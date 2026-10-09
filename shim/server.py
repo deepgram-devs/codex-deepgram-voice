@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import ipaddress
 import json
 import logging
 import os
@@ -58,6 +59,13 @@ class Settings:
     keyterms: list[str] = field(default_factory=list)
     live_captions: bool = True
     location_prefix: str = "/v1"
+    # A sideband that never sends session.update is closed after this long.
+    session_update_timeout_s: float = 10.0
+    # Flux events queued before session.updated (the sideband can lag the call by up to
+    # orphan_call_timeout_s, and Flux sends several Updates a second); past either cap the
+    # session is closed rather than letting a client that never finishes the handshake grow it.
+    pending_max_events: int = 2048
+    pending_max_bytes: int = 1 << 20
     orphan_call_timeout_s: float = 30.0  # drop a call whose sideband never attaches
 
 
@@ -89,6 +97,16 @@ def origin_allowed(origin: Optional[str]) -> bool:
     return host in LOCAL_HOSTS
 
 
+def is_loopback(host: str) -> bool:
+    """True only for a bind address that other machines cannot reach."""
+    if host in LOCAL_HOSTS:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False  # "", "0.0.0.0", hostnames: aiohttp would bind every interface or resolve it
+
+
 def trim(text: str, n: int = 120) -> str:
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 3] + "..."
@@ -106,6 +124,7 @@ class VoiceSession:
         self.ws: Optional[web.WebSocketResponse] = None
         self.pc: Optional[RTCPeerConnection] = None
         self.pending: list[dict] = []
+        self.pending_bytes = 0  # serialized size of `pending`, against Settings.pending_max_bytes
         self.dialect = "v1"  # "v1" (quicksilver) or "v2" (public realtime shape)
         self.session_type = "quicksilver"
         self.last_sent = ""  # caption text already appended in Codex for the current turn
@@ -113,6 +132,7 @@ class VoiceSession:
         self.turn_item_id = ""
         self.handoffs = 0
         self.closed = False
+        self._closing = False  # close() has started (it drains audio before it sets `closed`)
         self.flushing = False  # draining `pending` after session.update
         self.ready = False  # session.updated has been sent on the current sideband socket
         self.attached = False  # a sideband WebSocket has connected at least once
@@ -121,6 +141,8 @@ class VoiceSession:
         self.flux_failed = False  # Flux could not start or died; stop feeding, error sent once
         self._tasks: set[asyncio.Task] = set()  # strong refs to the pump and expiry tasks
         self._ws_resampler = av.AudioResampler(format="s16", layout="mono", rate=SAMPLE_RATE)
+        self._deadline: Optional[asyncio.Task] = None  # session.update deadline for the sideband
+        self._audio_before_update_warned = False
         self._started = time.monotonic()
 
     # ---- audio in -----------------------------------------------------------------
@@ -203,6 +225,24 @@ class VoiceSession:
         for out in self._ws_resampler.resample(frame):
             await self.feed_pcm16_16k(out.to_ndarray().tobytes())
 
+    async def _drain(self, resampler: av.AudioResampler) -> None:
+        """Forward the samples a resampler still holds. The resampler is finished afterwards."""
+        if self.closed or self.flux is None or self.flux_failed:
+            return
+        try:
+            tail = resampler.resample(None)
+        except Exception:  # noqa: BLE001
+            log.exception("[%s] resampler drain failed", self.tag)
+            return
+        for out in tail:
+            await self.feed_pcm16_16k(out.to_ndarray().tobytes())
+
+    async def _drain_ws_audio(self) -> None:
+        """End of the WebSocket audio stream: drain, then start a fresh resampler for any more."""
+        resampler, self._ws_resampler = self._ws_resampler, av.AudioResampler(
+            format="s16", layout="mono", rate=SAMPLE_RATE)  # a drained resampler raises EOFError on reuse
+        await self._drain(resampler)
+
     async def start_webrtc(self, offer_sdp: str) -> str:
         pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
         self.pc = pc
@@ -244,6 +284,7 @@ class VoiceSession:
             log.info("[%s] audio track ended after %d frames", self.tag, frames)
         except Exception:  # noqa: BLE001
             log.exception("[%s] audio pump failed", self.tag)
+        await self._drain(resampler)  # the resampler can hold the last few samples back
         if self.flux is not None and not self.closed and not self.flux_failed:
             # Let Flux settle the final turn before the sideband goes away.
             await self.flux.close()
@@ -339,12 +380,25 @@ class VoiceSession:
         # Nothing goes out before `session.updated`, and nothing overtakes the queue while it
         # drains, so Codex always sees events in the order Flux produced them.
         if self.ws is None or self.ws.closed or not self.ready or self.flushing:
-            self.pending.append(event)
+            self._queue(event)
             return
         try:
             await self.ws.send_json(event)
         except ConnectionResetError:
-            self.pending.append(event)
+            self._queue(event)
+
+    def _queue(self, event: dict) -> None:
+        size = len(json.dumps(event))
+        s = self.settings
+        if len(self.pending) >= s.pending_max_events or self.pending_bytes + size > s.pending_max_bytes:
+            if not self.closed and not self._closing:
+                log.warning("[%s] %d events (%d bytes) queued and Codex never sent session.update; "
+                            "closing the session", self.tag, len(self.pending), self.pending_bytes)
+                # emit() runs on the Flux reader task; close() must not wait on it from here.
+                self.spawn(self.close(), f"overflow-close-{self.tag}")
+            return
+        self.pending.append(event)
+        self.pending_bytes += size
 
     # ---- sideband in ---------------------------------------------------------------
 
@@ -352,6 +406,7 @@ class VoiceSession:
         self.ws = ws
         self.attached = True
         log.info("[%s] sideband WebSocket attached", self.tag)
+        self._deadline = self.spawn(self._session_update_deadline(ws), f"deadline-{self.tag}")
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
                 try:
@@ -365,12 +420,37 @@ class VoiceSession:
                 if await self.handle_codex_message(data):
                     break
             elif msg.type == WSMsgType.BINARY:
-                await self.feed_pcm16_16k(bytes(msg.data))  # not a Codex shape; accept anyway
+                if self._audio_allowed():
+                    await self.feed_pcm16_16k(bytes(msg.data))  # not a Codex shape; accept anyway
             elif msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.ERROR):
                 break
         log.info("[%s] sideband WebSocket closed", self.tag)
+        self._cancel_deadline()
         self.ws = None
         self.ready = False
+
+    async def _session_update_deadline(self, ws: web.WebSocketResponse) -> None:
+        await asyncio.sleep(self.settings.session_update_timeout_s)
+        if self.ready or self.ws is not ws or ws.closed:
+            return
+        log.warning("[%s] no session.update after %.0fs; closing the sideband", self.tag,
+                    self.settings.session_update_timeout_s)
+        await ws.close(code=1008, message=b"session.update not received")  # ends run_ws's loop
+
+    def _cancel_deadline(self) -> None:
+        if self._deadline is not None:
+            self._deadline.cancel()
+            self._deadline = None
+
+    def _audio_allowed(self) -> bool:
+        """WebSocket-transport audio counts only after session.update (WebRTC audio is not gated:
+        the call exists before the sideband does, and the orphan timer covers a call without one)."""
+        if self.ready:
+            return True
+        if not self._audio_before_update_warned:
+            self._audio_before_update_warned = True
+            log.warning("[%s] audio before session.update ignored", self.tag)
+        return False
 
     async def handle_codex_message(self, data: dict) -> bool:
         """Returns True when the session should end."""
@@ -394,15 +474,20 @@ class VoiceSession:
                         await ws.send_json(self.pending[0])
                     except ConnectionResetError:
                         return False  # the sideband went away: keep the rest, in order, for the next one
-                    self.pending.pop(0)
+                    self.pending_bytes -= len(json.dumps(self.pending.pop(0)))
                 self.ready = True
+                self._cancel_deadline()
             except ConnectionResetError:
                 return False
             finally:
                 self.flushing = False
             return False
         if kind == "input_audio_buffer.append":
-            await self.feed_codex_ws_audio(data.get("audio", ""))
+            if self._audio_allowed():
+                await self.feed_codex_ws_audio(data.get("audio", ""))
+            return False
+        if kind == "input_audio_buffer.commit":
+            await self._drain_ws_audio()
             return False
         if kind == "conversation.handoff.append":
             text = data.get("output_text", "")
@@ -415,15 +500,22 @@ class VoiceSession:
         if kind == "session.close":
             log.info("[%s] Codex closed the session", self.tag)
             return True
-        if kind in ("response.create", "input_audio_buffer.commit"):
+        if kind == "response.create":
             return False
         log.debug("[%s] unhandled Codex message %s", self.tag, kind)
         return False
 
     async def close(self) -> None:
-        if self.closed:
+        if self.closed or self._closing:
             return
+        self._closing = True
+        if self.flux is not None and not self.flux_failed:
+            try:
+                await self._drain_ws_audio()  # Codex's WebSocket transport never sends commit
+            except Exception:  # noqa: BLE001
+                log.exception("[%s] final drain failed", self.tag)
         self.closed = True
+        self._cancel_deadline()
         if self.flux is not None:
             try:
                 await self.flux.close(wait_s=3.0)
@@ -566,11 +658,21 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     ap.add_argument("--no-live-captions", action="store_true",
                     help="only send the finished transcript, no live deltas")
     ap.add_argument("--verbose", "-v", action="store_true")
+    ap.add_argument("--allow-unauthenticated-remote", action="store_true",
+                    help="bind a non-loopback --host. The shim has no client authentication: anyone "
+                         "who can reach the port can stream audio on your DEEPGRAM_API_KEY. Meant "
+                         "only for a container whose port is published on 127.0.0.1.")
     return ap.parse_args(argv)
 
 
 def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
+    if not is_loopback(args.host) and not args.allow_unauthenticated_remote:
+        print(f"error: --host {args.host!r} is not a loopback address. The shim has no client "
+              "authentication, so it only binds 127.0.0.1 by default. Pass "
+              "--allow-unauthenticated-remote if the port is published on 127.0.0.1 by a container.",
+              file=sys.stderr)
+        sys.exit(2)
     if not os.environ.get("DEEPGRAM_API_KEY", "").strip():
         print("error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the "
               "shim again.", file=sys.stderr)
@@ -589,6 +691,9 @@ def main(argv: Optional[list[str]] = None) -> None:
         live_captions=not args.no_live_captions,
     )
     app = build_app(settings)
+    if not is_loopback(args.host):
+        log.warning("binding %s: no client authentication; anyone who can reach this port can use "
+                    "your Deepgram key. Publish it on 127.0.0.1 only.", args.host)
     log.info("Codex voice shim listening on http://%s:%d  (calls: /v1/realtime/calls, sideband: /v1/realtime)",
              args.host, args.port)
     log.info("Codex config: experimental_realtime_webrtc_call_base_url = \"http://%s:%d/v1\", "
