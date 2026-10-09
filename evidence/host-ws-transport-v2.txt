@@ -1,11 +1,11 @@
-connected ws://127.0.0.1:64123/v1/realtime (dialect v2)
-[  0.03s] session.updated {'id': 'sess_c892a2da59317d88', 'type': 'transcription'}
-[  0.84s] input_audio_buffer.speech_started
-[  1.24s] conversation.item.input_audio_transcription.delta: 'Yeah. Is'
-[  1.48s] conversation.item.input_audio_transcription.delta: ' Yeah.'
-[  2.00s] conversation.item.input_audio_transcription.delta: ' As as much as'
-[ 28.44s] conversation.item.input_audio_transcription.completed: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+connected ws://127.0.0.1:51904/v1/realtime (dialect v2, session type transcription)
+[  0.02s] session.updated {'id': 'sess_4c0b4eaf2bf4a567', 'type': 'transcription'}
+[  0.55s] input_audio_buffer.speech_started
+[  1.07s] conversation.item.input_audio_transcription.delta: 'Yeah. Is'
+[  1.83s] conversation.item.input_audio_transcription.delta: ' As as much as'
+[  2.58s] conversation.item.input_audio_transcription.delta: ','
+[ 27.31s] conversation.item.input_audio_transcription.completed: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
 
 summary:
-  session.updated: 1, caption deltas: 82, done events: 1, handoffs: 0, other: ['input_audio_buffer.speech_started']
+  session.updated: 1, caption deltas: 60, done events: 1, handoffs: 0, other: ['input_audio_buffer.speech_started']
 RESULT: PASS

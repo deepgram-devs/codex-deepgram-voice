@@ -1,13 +1,13 @@
 $ docker compose run --rm ws-check-v2
- Container codex-deepgram-voice-ws-check-v2-run-9803bd3d4193 Creating 
- Container codex-deepgram-voice-ws-check-v2-run-9803bd3d4193 Created 
-connected ws://127.0.0.1:33203/v1/realtime (dialect v2, session type transcription)
-[  0.02s] session.updated {'id': 'sess_87c74d35c4a16759', 'type': 'transcription'}
-[  0.69s] input_audio_buffer.speech_started
-[  1.21s] conversation.item.input_audio_transcription.delta: 'Yeah. Is'
-[  2.05s] conversation.item.input_audio_transcription.delta: ' As as much as'
-[  2.89s] conversation.item.input_audio_transcription.delta: ','
-[ 30.05s] conversation.item.input_audio_transcription.completed: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+ Container codex-deepgram-voice-ws-check-v2-run-35326b0b1cf3 Creating
+ Container codex-deepgram-voice-ws-check-v2-run-35326b0b1cf3 Created
+connected ws://127.0.0.1:42661/v1/realtime (dialect v2, session type transcription)
+[  0.03s] session.updated {'id': 'sess_fd6558090de8fd9b', 'type': 'transcription'}
+[  0.67s] input_audio_buffer.speech_started
+[  1.23s] conversation.item.input_audio_transcription.delta: 'Yeah. Is'
+[  2.06s] conversation.item.input_audio_transcription.delta: ' As as much as'
+[  2.90s] conversation.item.input_audio_transcription.delta: ','
+[ 30.03s] conversation.item.input_audio_transcription.completed: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
 
 summary:
   session.updated: 1, caption deltas: 60, done events: 1, handoffs: 0, other: ['input_audio_buffer.speech_started']

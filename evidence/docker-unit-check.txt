@@ -1,13 +1,28 @@
 $ docker compose run --rm unit-check
- Container codex-deepgram-voice-unit-check-run-ab746e8d761b Creating 
- Container codex-deepgram-voice-unit-check-run-ab746e8d761b Created 
-[rtc_6fbf5a53e4e75ad1375cb107] no sideband after 0s; dropping the call
+ Container codex-deepgram-voice-unit-check-run-1359305bc972 Creating
+ Container codex-deepgram-voice-unit-check-run-1359305bc972 Created
+[rtc_tail] audio before session.update ignored
+[rtc_cap] 5 events (360 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap] 5 events (360 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap] 5 events (360 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap2] 1 events (125 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap2] 1 events (125 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap2] 1 events (125 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap2] 1 events (125 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap2] 1 events (125 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap2] 1 events (125 bytes) queued and Codex never sent session.update; closing the session
+[rtc_cap2] 1 events (125 bytes) queued and Codex never sent session.update; closing the session
+[rtc_1b3b8fc484916dab848a4861] no sideband after 0s; dropping the call
 sideband for unknown or expired call id
 [prefix] PASS
 [origin] PASS
 [ordering] PASS
 [captions] PASS
 [double-close] PASS
+[immediate-close] PASS
+[tail] PASS
+[queue-cap] PASS
+[loopback] PASS
 [registry] PASS
-RESULT: PASS {'prefix': True, 'origin': True, 'ordering': True, 'captions': True, 'double-close': True, 'registry': True}
+RESULT: PASS {'prefix': True, 'origin': True, 'ordering': True, 'captions': True, 'double-close': True, 'immediate-close': True, 'tail': True, 'queue-cap': True, 'loopback': True, 'registry': True}
 exit=0

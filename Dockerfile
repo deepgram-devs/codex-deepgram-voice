@@ -18,4 +18,7 @@ COPY audio ./audio
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8765
 # Default: run the shim. Override the command for tests.
-CMD ["python", "-m", "shim.server", "--host", "0.0.0.0", "--port", "8765"]
+# A container must bind 0.0.0.0 for the port mapping to work, and the shim refuses a non-loopback
+# bind without this flag. It has no client authentication: publish the port on 127.0.0.1 only
+# (compose.yaml does), never with a bare `-p 8765:8765`.
+CMD ["python", "-m", "shim.server", "--host", "0.0.0.0", "--port", "8765", "--allow-unauthenticated-remote"]
