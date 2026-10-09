@@ -305,9 +305,10 @@ class VoiceSession:
         conf = info.end_of_turn_confidence
         conf_s = f"{conf:.3f}" if isinstance(conf, (int, float)) else "n/a"
         if info.event == "StartOfTurn":
-            if info.turn_index == self.turn_index:
+            if info.turn_index >= 0 and info.turn_index == self.turn_index:
                 # A second StartOfTurn for the turn in progress (Flux numbers turns from 0 and
-                # never reuses an index within a stream): keep the captions already shown.
+                # never reuses an index within a stream): keep the captions already shown. An
+                # event without an index always starts a new turn.
                 log.debug("[%s] turn %d repeated StartOfTurn ignored", self.tag, info.turn_index)
                 return
             self.turn_index = info.turn_index

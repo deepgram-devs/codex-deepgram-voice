@@ -82,7 +82,7 @@ turn 0 EndOfTurn conf=0.8xx -> Codex: Create a file called hello.txt that says h
 Codex reply for handoff_...: ...
 ```
 
-In Codex you should see the live caption while you speak, then the finished transcript, then the turn running. In the log, a *call* is the WebRTC connection Codex opens and a *session* is the voice session it belongs to; one call, one session.
+In Codex you should see the live caption while you speak, then the finished transcript, then the turn running. In the log, a *call* is the WebRTC connection Codex opens, the *sideband* is the WebSocket it opens beside the call to carry events, and a *session* is the voice session both belong to; one call, one sideband, one session.
 
 ## Troubleshooting
 
@@ -179,7 +179,7 @@ docker compose run --rm e2e
 
 ### Run the shim in Docker
 
-`docker compose up shim` starts the shim in a container, published on 127.0.0.1:8765 only. Inside the container the shim must bind `0.0.0.0` for the port mapping to work, so the image's default command passes `--allow-unauthenticated-remote`. `compose.yaml` publishes the port on `127.0.0.1:8765` only, which is what keeps it off your network. On macOS, Docker Desktop does not carry WebRTC media from Codex into a container, so the containerized shim serves the plain WebSocket transport only and the real microphone session needs the host venv from the quick start. On Linux, `docker run --network host` with the command overridden to `python -m shim.server` (the default `127.0.0.1` bind, no flag) should carry the WebRTC path as well; that has not been tested here. Do not combine host networking with the image's default command, which binds every interface.
+`docker compose up shim` starts the shim in a container, published on 127.0.0.1:8765 only. Inside the container the shim must bind `0.0.0.0` for the port mapping to work, so the image's default command passes `--allow-unauthenticated-remote`. The compose port mapping on 127.0.0.1 is what keeps it off your network. On macOS, Docker Desktop does not carry WebRTC media from Codex into a container, so the containerized shim serves the plain WebSocket transport only and the real microphone session needs the host venv from the quick start. On Linux, `docker run --network host` with the command overridden to `python -m shim.server` (the default `127.0.0.1` bind, no flag) should carry the WebRTC path as well; that has not been tested here. Do not combine host networking with the image's default command, which binds every interface.
 
 ## How it works
 
@@ -213,7 +213,7 @@ Not yet recorded: a session with a real microphone and the Codex TUI. The headle
 - The shim is localhost-only. It binds `127.0.0.1` by default and refuses any non-loopback `--host` unless you pass `--allow-unauthenticated-remote` (exit status 2 otherwise).
 - There is no client authentication, and none can be added: Codex decides which headers it sends, so the shim cannot ask it for a shared secret. Anyone who can reach the port can stream audio on your Deepgram key and read the transcripts. Exposing the shim beyond your machine is unsupported.
 - Requests carrying a browser Origin other than localhost get 403. That stops a web page you visit from opening Flux sessions on your key; it is not authentication, since Codex itself sends no Origin and any non-browser client can omit one.
-- In Docker the shim must bind `0.0.0.0` inside the container, so the image's default command passes `--allow-unauthenticated-remote`. `compose.yaml` publishes the port on `127.0.0.1:8765` only, which is what keeps it off your network. A bare `docker run -p 8765:8765` would publish it on every interface and the shim cannot see the mapping from inside; use `-p 127.0.0.1:8765:8765`.
+- In Docker the shim must bind `0.0.0.0` inside the container, so the image's default command passes `--allow-unauthenticated-remote`. The compose port mapping on 127.0.0.1 is what keeps it off your network. A bare `docker run -p 8765:8765` would publish it on every interface and the shim cannot see the mapping from inside; use `-p 127.0.0.1:8765:8765`.
 - A sideband or WebSocket client that never sends `session.update` is closed after 10 seconds (close code 1008), and the events queued before it are capped at 2048 events or 1 MiB, so a misbehaving client cannot hold a session open or grow it without bound.
 - `-v` turns on debug logging for the shim. It does not print your API key.
 

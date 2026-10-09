@@ -39,7 +39,7 @@ CHUNK_BYTES = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE * CHUNK_MS // 1000  # 25
 class TurnInfo:
     event: str
     transcript: str
-    turn_index: int
+    turn_index: int  # -1 when Flux did not send one
     end_of_turn_confidence: Optional[float]
     raw: dict = field(repr=False, default_factory=dict)
 
@@ -217,7 +217,7 @@ class FluxSession:
                     info = TurnInfo(
                         event=data.get("event", ""),
                         transcript=data.get("transcript", "") or "",
-                        turn_index=int(data.get("turn_index", 0) or 0),
+                        turn_index=int(data["turn_index"]) if data.get("turn_index") is not None else -1,
                         end_of_turn_confidence=data.get("end_of_turn_confidence"),
                         raw=data,
                     )

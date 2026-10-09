@@ -11,8 +11,9 @@ services:
     environment:
       - DEEPGRAM_API_KEY
     ports:
-      - "127.0.0.1:8765:8765"  # this machine only. The image CMD passes --allow-unauthenticated-remote
-                               # because the container has to bind 0.0.0.0; this mapping is the guard.
+      - "127.0.0.1:8765:8765"  # The image CMD passes --allow-unauthenticated-remote because the container
+                               # has to bind 0.0.0.0. The compose port mapping on 127.0.0.1 is what keeps
+                               # it off your network.
 
   flux-check:
     build: .
