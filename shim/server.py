@@ -37,7 +37,7 @@ from urllib.parse import urlsplit
 import av
 import numpy as np
 import websockets
-from aiohttp import WSMsgType, web
+from aiohttp import BodyPartReader, WSMsgType, web
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.mediastreams import MediaStreamError
 
@@ -105,6 +105,17 @@ def is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False  # "", "0.0.0.0", hostnames: aiohttp would bind every interface or resolve it
+
+
+def as_dict(value: object) -> dict:
+    """A JSON member that must be an object: anything else counts as absent."""
+    return value if isinstance(value, dict) else {}
+
+
+def session_type_of(session: dict) -> str:
+    """The `type` of a Codex session object; Codex's v1 shape (`quicksilver`) when missing."""
+    stype = session.get("type")
+    return stype if isinstance(stype, str) and stype else "quicksilver"
 
 
 def trim(text: str, n: int = 120) -> str:
@@ -429,7 +440,7 @@ class VoiceSession:
             if msg.type == WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, RecursionError):  # not JSON, or nested past the parser
                     log.warning("[%s] non-JSON text frame from Codex", self.tag)
                     continue
                 if not isinstance(data, dict):
@@ -475,8 +486,8 @@ class VoiceSession:
         """Returns True when the session should end."""
         kind = data.get("type")
         if kind == "session.update":
-            session = data.get("session") or {}
-            stype = session.get("type") or "quicksilver"
+            session = as_dict(data.get("session"))  # a non-object `session` is treated as empty
+            stype = session_type_of(session)
             self.session_type = stype
             self.dialect = "v1" if stype == "quicksilver" else "v2"
             log.info("[%s] session.update type=%s -> dialect %s", self.tag, stype, self.dialect)
@@ -503,17 +514,18 @@ class VoiceSession:
             return False
         if kind == "input_audio_buffer.append":
             if self._audio_allowed():
-                await self.feed_codex_ws_audio(data.get("audio", ""))
+                await self.feed_codex_ws_audio(data.get("audio", ""))  # non-base64 input is dropped there
             return False
         if kind == "input_audio_buffer.commit":
             await self._drain_ws_audio()
             return False
         if kind == "conversation.handoff.append":
-            text = data.get("output_text", "")
-            log.info("[%s] Codex reply for %s: %s", self.tag, data.get("handoff_id"), trim(text))
+            text = data.get("output_text")
+            log.info("[%s] Codex reply for %s: %s", self.tag, data.get("handoff_id"),
+                     trim(text) if isinstance(text, str) else "(no text)")
             return False
         if kind == "conversation.item.create":
-            item = data.get("item") or {}
+            item = as_dict(data.get("item"))
             log.info("[%s] Codex context item (%s) ignored", self.tag, item.get("role") or item.get("type"))
             return False
         if kind == "session.close":
@@ -606,41 +618,68 @@ def build_app(settings: Settings) -> web.Application:
     async def create_call(request: web.Request) -> web.Response:
         if (request.content_length or 0) > MAX_CALL_BODY:
             return web.Response(status=413, text="offer too large")
-        sdp: Optional[str] = None
-        session_json: dict = {}
+        # Codex sends multipart (`sdp` + `session` parts); JSON and raw SDP are accepted too.
+        # Nothing here may raise on a malformed body: the client gets a 400 with the reason, and
+        # the body itself is never logged.
+        def reject(reason: str) -> web.Response:
+            log.warning("call request rejected: %s", reason)
+            return web.Response(status=400, text=reason)
+
+        sdp: object = None
+        session_json: object = None
         ctype = request.content_type
-        if ctype == "multipart/form-data":
-            reader = await request.multipart()
-            async for part in reader:
-                if part.name == "sdp":
-                    sdp = (await part.read(decode=False)).decode("utf-8", "replace")
-                elif part.name == "session":
-                    try:
+        try:
+            if ctype == "multipart/form-data":
+                async for part in await request.multipart():
+                    if not isinstance(part, BodyPartReader):
+                        return reject("nested multipart is not accepted")
+                    if part.name == "sdp":
+                        sdp = (await part.read(decode=False)).decode("utf-8", "replace")
+                    elif part.name == "session":
                         session_json = json.loads(await part.text())
-                    except json.JSONDecodeError:
-                        session_json = {}
-        elif ctype == "application/json":
-            body = await request.json()
-            sdp = body.get("sdp")
-            session_json = body.get("session") or {}
-        else:
-            sdp = await request.text()
-        if not sdp or not sdp.startswith("v=0"):
-            return web.Response(status=400, text="expected an SDP offer")
+            elif ctype == "application/json":
+                body = await request.json()
+                if not isinstance(body, dict):
+                    return reject("call request must be a JSON object")
+                sdp = body.get("sdp")
+                session_json = body.get("session")
+            else:
+                sdp = await request.text()
+        except json.JSONDecodeError:
+            return reject("call request is not valid JSON")
+        except UnicodeDecodeError:
+            return reject("call request is not valid UTF-8")
+        except RecursionError:
+            return reject("call request JSON is nested too deep")
+        except LookupError:
+            return reject("unknown charset on a multipart part")
+        except RuntimeError:
+            return reject("unknown transfer encoding on a multipart part")
+        except ValueError:  # no boundary, or the body ends before the closing boundary
+            return reject("malformed multipart body")
+        if session_json is None:
+            session_json = {}
+        if not isinstance(session_json, dict):
+            return reject("session must be a JSON object")
+        if not isinstance(sdp, str) or not sdp.startswith("v=0"):
+            return reject("sdp must be a string starting with v=0")
 
         call_id = f"rtc_{secrets.token_hex(12)}"
         session = VoiceSession(settings, call_id)
-        session.session_type = session_json.get("type") or "quicksilver"
+        session.session_type = session_type_of(session_json)
         session.dialect = "v1" if session.session_type == "quicksilver" else "v2"
         register(session)
         log.info("[%s] call created (session type %s, query %s)", call_id, session.session_type,
                  dict(request.query) or "{}")
         try:
             answer = await session.start_webrtc(sdp)
-        except Exception:  # noqa: BLE001
-            log.exception("[%s] WebRTC answer failed", call_id)
+        except Exception as exc:  # noqa: BLE001
+            # aiortc raises ValueError, KeyError, IndexError, or AssertionError depending on
+            # which line of a bad offer it trips on; all of them are the client's offer. Only
+            # the exception type is logged: the message can quote the offer.
+            log.warning("[%s] offer rejected by aiortc (%s)", call_id, type(exc).__name__)
             await session.close()  # releases the peer connection and the registry entry
-            return web.Response(status=500, text="webrtc negotiation failed")
+            return reject("SDP offer could not be negotiated")
         session.spawn(expire_if_orphaned(session), f"expire-{call_id}")
         location = f"{settings.location_prefix}/realtime/calls/{call_id}"
         return web.Response(status=201, body=answer.encode(), content_type="application/sdp",

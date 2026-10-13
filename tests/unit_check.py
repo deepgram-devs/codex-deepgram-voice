@@ -22,6 +22,9 @@
                 reader task and still closes the Flux socket
   loopback      is_loopback(): 127.0.0.1, 127.1.2.3, ::1, localhost pass; 0.0.0.0, LAN
                 addresses, hostnames, and "" fail
+  bad-messages  Codex messages with the right `type` but wrong member shapes (a string `session`,
+                a string `item`, a non-string `audio`) are handled without an exception and a
+                well-formed session.update still works on the same session
   close-paths   VoiceSession.close() still closes Flux and drops the registry entry when the
                 peer connection refuses to close, and when close() itself is cancelled mid-drain
   registry      a call whose sideband never attaches is dropped at the expiry window and leaves
@@ -449,6 +452,36 @@ def check_loopback() -> bool:
     return ok
 
 
+async def check_bad_messages() -> bool:
+    s = VoiceSession(Settings(), "rtc_shapes")
+    ws = FakeSideband()
+    s.ws = ws
+    s.flux = StubFlux()  # type: ignore[assignment]
+    bad = [
+        {"type": "session.update", "session": "bad"},
+        {"type": "session.update", "session": {"type": 5}},
+        {"type": "conversation.item.create", "item": "x"},
+        {"type": "input_audio_buffer.append", "audio": 5},
+        {"type": "input_audio_buffer.append"},
+        {"type": "conversation.handoff.append", "output_text": None},
+    ]
+    for msg in bad:
+        try:
+            await s.handle_codex_message(msg)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  {msg} raised {type(exc).__name__}: {exc}")
+            return False
+    updated = [e for e in ws.sent if e["type"] == "session.updated"]
+    if len(updated) != 2 or any(e["session"]["type"] != "quicksilver" for e in updated):
+        print(f"  session.updated for malformed session.update: {updated}")
+        return False
+    await s.handle_codex_message({"type": "session.update", "session": {"type": "transcription"}})
+    if ws.sent[-1] != {"type": "session.updated", "session": {"id": s.session_id, "type": "transcription"}}:
+        print(f"  well-formed session.update after bad ones gave {ws.sent[-1]}")
+        return False
+    return s.flux.fed == b""
+
+
 async def check_close_paths() -> bool:
     ok = True
     # The peer connection raises on close: Flux is still closed and the registry hook still runs.
@@ -557,6 +590,7 @@ async def main() -> int:
         "tail": await check_tail(),
         "queue-cap": await check_queue_cap(),
         "loopback": check_loopback(),
+        "bad-messages": await check_bad_messages(),
         "close-paths": await check_close_paths(),
         "registry": await check_registry(),
     }

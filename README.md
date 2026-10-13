@@ -169,8 +169,8 @@ Every check is also a `compose.yaml` service. `DEEPGRAM_API_KEY` must be exporte
 | `flux-check` | yes | The sample clip against live Flux: one `EndOfTurn` |
 | `e2e` | yes | The full Codex protocol path through the shim, WebRTC and sideband |
 | `ws-check-v1`, `ws-check-v2`, `ws-check-v2-handoff` | yes | The plain WebSocket transport in the v1 shape, the v2 transcription shape, and the v2 realtime shape with its `background_agent` handoff |
-| `hardening-check` | no (needs network) | Missing-key exit, cross-origin 403, orphaned-call expiry, a bad key producing one `error` event with no key in the `-v` output, that error reaching a call whose sideband attaches late, a client that never sends `session.update` being closed with code 1008 before any Flux connection, and a non-loopback bind being refused without `--allow-unauthenticated-remote` |
-| `unit-check` | no | Offline session logic: caption prefix at word boundaries, the Origin filter, event ordering before `session.updated`, caption revision, empty turns, concurrent and immediate close, the resampler tail reaching Flux, the pre-`session.update` queue cap, loopback detection, close paths that must still release the session, registry cleanup and the second-sideband 409 |
+| `hardening-check` | no (needs network) | Missing-key exit, cross-origin 403, orphaned-call expiry, a bad key producing one `error` event with no key in the `-v` output, that error reaching a call whose sideband attaches late, a client that never sends `session.update` being closed with code 1008 before any Flux connection, a non-loopback bind being refused without `--allow-unauthenticated-remote`, malformed call bodies (a JSON array, non-JSON, JSON nested past the parser, a string `session`, bad UTF-8, an unknown multipart charset or transfer encoding, a nested part, a body cut short, an offer aiortc cannot negotiate) getting a 400 naming the problem and no server error, and a sideband frame nested too deep to parse being dropped without a server error |
+| `unit-check` | no | Offline session logic: caption prefix at word boundaries, the Origin filter, event ordering before `session.updated`, caption revision, empty turns, concurrent and immediate close, the resampler tail reaching Flux, the pre-`session.update` queue cap, loopback detection, Codex messages with the wrong member shapes, close paths that must still release the session, registry cleanup and the second-sideband 409 |
 
 ```bash
 docker compose run --rm hardening-check
@@ -202,7 +202,7 @@ Every check under `tests/` was run in Docker and in a host venv, and the trimmed
 - `wav_to_flux.py` on the sample clip: one `EndOfTurn`, at confidence 0.820 with `eot_threshold` 0.8 and 0.778 with the Flux default of 0.7. The clip's filler pauses ("um", "uh") peaked at 0.340 and never ended the turn.
 - `e2e_fake_codex.py`: the full WebRTC call, sideband WebSocket, caption deltas, `turn_marked`, and one `handoff.requested` carrying the finished transcript, ending in `RESULT: PASS`.
 - `ws_transport_check.py` in the v1 shape, the v2 transcription shape, and the v2 realtime shape that hands off through a `background_agent` function call.
-- `hardening_check.py` (seven checks) and `unit_check.py` (eleven checks), as described in the table above.
+- `hardening_check.py` (nine checks) and `unit_check.py` (twelve checks), as described in the table above.
 
 Not yet recorded: a session with a real microphone and the Codex TUI. The headless checks drive the shim with a fake Codex client built from the same source citations. The log sequence in [step 3](#3-talk) is what that session should produce, and the 10-minute test above is the matching check for turn detection.
 

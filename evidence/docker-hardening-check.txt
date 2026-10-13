@@ -1,6 +1,6 @@
 $ docker compose run --rm hardening-check
- Container codex-deepgram-voice-hardening-check-run-be33cb07f07a Creating
- Container codex-deepgram-voice-hardening-check-run-be33cb07f07a Created
+ Container codex-deepgram-voice-hardening-check-run-467c9fb2fa2b Creating
+ Container codex-deepgram-voice-hardening-check-run-467c9fb2fa2b Created
 [missing-key]
   exit code 1, stderr: 'error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the shim again.'
   -> PASS
@@ -15,13 +15,14 @@ WARNING:shim:rejected GET /v1/realtime from non-local Origin
   WS   Origin='http://localhost.evil.example'  -> 403 (want 403)
 WARNING:shim:rejected GET /v1/realtime from non-local Origin
   WS   Origin='null'                           -> 403 (want 403)
-  POST Origin='https://evil.example'           -> 403 (want 403)
 WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
+  POST Origin='https://evil.example'           -> 403 (want 403)
+WARNING:shim:call request rejected: sdp must be a string starting with v=0
   POST Origin=None                             -> 400 (want 400)
   -> PASS
 [orphan]
-  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_6c199bed176c00903f1fc8fa
-WARNING:shim:[rtc_6c199bed176c00903f1fc8fa] no sideband after 2s; dropping the call
+  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_53de92e84035df1982d9a2cb
+WARNING:shim:[rtc_53de92e84035df1982d9a2cb] no sideband after 2s; dropping the call
   sessions right after the call: 1, after 2.5s: 0
   -> PASS
 [bad-key]
@@ -37,13 +38,57 @@ WARNING:shim:[rtc_6c199bed176c00903f1fc8fa] no sideband after 2s; dropping the c
   Flux rejected the key before the sideband attached: True
   -> PASS
 [no-session-update]
-WARNING:shim:[sess_9ecc3086031ed76b] audio before session.update ignored
-WARNING:shim:[sess_9ecc3086031ed76b] no session.update after 1s; closing the sideband
+WARNING:shim:[sess_19eed13a2d562123] audio before session.update ignored
+WARNING:shim:[sess_19eed13a2d562123] no session.update after 1s; closing the sideband
   sessions while streaming: 1, Flux opened: False, frames received: [], close code: 1008, sessions after: 0
   -> PASS
 [remote-bind]
   without the flag: exit code 2, stderr: "error: --host '0.0.0.0' is not a loopback address. The shim has no client authentication, so it only binds 127.0.0.1 by default. Pass --allow-unauthenticated-remote only inside a container whose port is published on 127.0.0.1."
   with the flag: /healthz answered, startup warning logged: True
   -> PASS
-RESULT: PASS {'missing-key': True, 'origin': True, 'orphan': True, 'bad-key': True, 'late-sideband': True, 'no-session-update': True, 'remote-bind': True}
+[bad-call-body]
+WARNING:shim:call request rejected: call request must be a JSON object
+  JSON array                   -> 400 'call request must be a JSON object' (want 400 'call request must be a JSON object')
+WARNING:shim:call request rejected: call request is not valid JSON
+  non-JSON                     -> 400 'call request is not valid JSON' (want 400 'call request is not valid JSON')
+WARNING:shim:call request rejected: call request JSON is nested too deep
+  deeply nested JSON           -> 400 'call request JSON is nested too deep' (want 400 'call request JSON is nested too deep')
+WARNING:shim:call request rejected: session must be a JSON object
+  string session               -> 400 'session must be a JSON object' (want 400 'session must be a JSON object')
+WARNING:shim:call request rejected: sdp must be a string starting with v=0
+  non-string sdp               -> 400 'sdp must be a string starting with v=0' (want 400 'sdp must be a string starting with v=0')
+WARNING:shim:call request rejected: call request is not valid UTF-8
+  bad UTF-8 as JSON            -> 400 'call request is not valid UTF-8' (want 400 'call request is not valid UTF-8')
+WARNING:shim:call request rejected: call request is not valid UTF-8
+  bad UTF-8 as SDP             -> 400 'call request is not valid UTF-8' (want 400 'call request is not valid UTF-8')
+WARNING:shim:call request rejected: session must be a JSON object
+  multipart string session     -> 400 'session must be a JSON object' (want 400 'session must be a JSON object')
+WARNING:shim:call request rejected: call request is not valid JSON
+  multipart non-JSON session   -> 400 'call request is not valid JSON' (want 400 'call request is not valid JSON')
+WARNING:shim:call request rejected: unknown charset on a multipart part
+  multipart unknown charset    -> 400 'unknown charset on a multipart part' (want 400 'unknown charset on a multipart part')
+WARNING:shim:call request rejected: unknown transfer encoding on a multipart part
+  multipart bogus transfer enc -> 400 'unknown transfer encoding on a multipart part' (want 400 'unknown transfer encoding on a multipart part')
+WARNING:shim:call request rejected: malformed multipart body
+  multipart cut short          -> 400 'malformed multipart body' (want 400 'malformed multipart body')
+WARNING:shim:call request rejected: nested multipart is not accepted
+  nested multipart part        -> 400 'nested multipart is not accepted' (want 400 'nested multipart is not accepted')
+WARNING:shim:[rtc_212d077e46511f72a3fae50c] offer rejected by aiortc (KeyError)
+WARNING:shim:call request rejected: SDP offer could not be negotiated
+  offer: bad setup line        -> 400 'SDP offer could not be negotiated' (want 400 'SDP offer could not be negotiated')
+WARNING:shim:[rtc_0304b1ede0b6be3766f602e9] offer rejected by aiortc (AssertionError)
+WARNING:shim:call request rejected: SDP offer could not be negotiated
+  offer: bare media line       -> 400 'SDP offer could not be negotiated' (want 400 'SDP offer could not be negotiated')
+WARNING:shim:[rtc_31b094463ffbf8600fd7cdaf] offer rejected by aiortc (ValueError)
+WARNING:shim:call request rejected: SDP offer could not be negotiated
+  offer: garbage after v=0     -> 400 'SDP offer could not be negotiated' (want 400 'SDP offer could not be negotiated')
+  well-formed JSON call          -> 201 (want 201)
+WARNING:shim:[rtc_6c489d4e3d2a2a7a4e15c429] no sideband after 0s; dropping the call
+  server errors logged: 0 (want 0), sessions after the orphan window: 0
+  -> PASS
+[bad-ws-frame]
+WARNING:shim:[sess_d4597d54ba872a65] non-JSON text frame from Codex
+  after a 100k-deep frame, session.update answered with: session.updated; server errors: 0
+  -> PASS
+RESULT: PASS {'missing-key': True, 'origin': True, 'orphan': True, 'bad-key': True, 'late-sideband': True, 'no-session-update': True, 'remote-bind': True, 'bad-call-body': True, 'bad-ws-frame': True}
 exit=0

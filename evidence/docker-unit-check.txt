@@ -1,11 +1,12 @@
 $ docker compose run --rm unit-check
- Container codex-deepgram-voice-unit-check-run-873415d2cbf2 Creating
- Container codex-deepgram-voice-unit-check-run-873415d2cbf2 Created
+ Container codex-deepgram-voice-unit-check-run-43cb17dcea1f Creating
+ Container codex-deepgram-voice-unit-check-run-43cb17dcea1f Created
 waiting for the Flux reader failed: reader failed
 [rtc_tail] audio before session.update ignored
 [rtc_cap] 5 events (329 bytes) queued and Codex never sent session.update; closing the session
 [rtc_cap] 3 events (197 bytes) queued and Codex never sent session.update; closing the session
-[rtc_3d8c146d7bbd53e5a511a84d] second sideband for the same call refused
+[rtc_shapes] input_audio_buffer.append carried invalid base64; frame dropped
+[rtc_0e86f5196a3617449b94bf49] second sideband for the same call refused
 sideband for unknown or expired call id
 [prefix] PASS
 [origin] PASS
@@ -16,7 +17,8 @@ sideband for unknown or expired call id
 [tail] PASS
 [queue-cap] PASS
 [loopback] PASS
+[bad-messages] PASS
 [close-paths] PASS
 [registry] PASS
-RESULT: PASS {'prefix': True, 'origin': True, 'ordering': True, 'captions': True, 'double-close': True, 'immediate-close': True, 'tail': True, 'queue-cap': True, 'loopback': True, 'close-paths': True, 'registry': True}
+RESULT: PASS {'prefix': True, 'origin': True, 'ordering': True, 'captions': True, 'double-close': True, 'immediate-close': True, 'tail': True, 'queue-cap': True, 'loopback': True, 'bad-messages': True, 'close-paths': True, 'registry': True}
 exit=0

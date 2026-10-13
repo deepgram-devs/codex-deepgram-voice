@@ -17,6 +17,13 @@
                  1008 at the deadline, and the session leaves the registry
   remote-bind    `--host 0.0.0.0` exits 2 without `--allow-unauthenticated-remote`; with the
                  flag the shim starts and answers /healthz
+  bad-call-body  malformed call requests (a JSON array, non-JSON, JSON nested past the parser,
+                 a string `session`, a non-string `sdp`, bad UTF-8, a multipart part with an
+                 unknown charset or transfer encoding, a nested multipart part, a multipart body
+                 cut short, an offer aiortc cannot negotiate) get a 400 naming the problem and
+                 no server error; a well-formed JSON call still gets 201
+  bad-ws-frame   a sideband text frame nested too deep to parse is dropped like any non-JSON
+                 frame, and a session.update on the same socket still gets session.updated
 
 Usage:
   python tests/hardening_check.py [--key FAKE_KEY_SENTINEL] [--only origin ...]
@@ -163,6 +170,120 @@ async def check_remote_bind() -> bool:
     return refused and healthy and warned
 
 
+class ErrorLog:
+    """Collects ERROR records from the shim and from aiohttp's request handler."""
+
+    def __init__(self) -> None:
+        self.records: list[logging.LogRecord] = []
+        self.handler = logging.Handler(logging.ERROR)
+        self.handler.emit = self.records.append  # type: ignore[method-assign]
+        self.loggers = [logging.getLogger("shim"), logging.getLogger("aiohttp.server")]
+
+    def __enter__(self) -> "ErrorLog":
+        for lg in self.loggers:
+            lg.addHandler(self.handler)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        for lg in self.loggers:
+            lg.removeHandler(self.handler)
+
+
+MINIMAL_OFFER = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
+
+
+async def check_bad_call_body(orphan_s: float = 0.5) -> bool:
+    runner, base = await start_in_process(Settings(orphan_call_timeout_s=orphan_s))
+    url = f"{base}/v1/realtime/calls"
+    json_ct = {"Content-Type": "application/json"}
+
+    def multipart(session_part: bytes, charset: str | None = None) -> aiohttp.FormData:
+        form = aiohttp.FormData()
+        form.add_field("sdp", MINIMAL_OFFER, content_type="application/sdp")
+        ct = "application/json" + (f"; charset={charset}" if charset else "")
+        form.add_field("session", session_part, content_type=ct)
+        return form
+
+    # aiohttp's form builder drops an unknown transfer encoding, so this one is raw bytes.
+    raw_boundary = "raw-boundary"
+    raw_bogus_cte = ("--" + raw_boundary + "\r\nContent-Disposition: form-data; name=\"sdp\"\r\n"
+                     "Content-Type: application/sdp\r\n\r\n" + MINIMAL_OFFER + "\r\n"
+                     "--" + raw_boundary + "\r\nContent-Disposition: form-data; name=\"session\"\r\n"
+                     "Content-Type: application/json\r\nContent-Transfer-Encoding: x-bogus\r\n\r\n{}\r\n"
+                     "--" + raw_boundary + "--\r\n").encode()
+    raw_ct = {"Content-Type": f"multipart/form-data; boundary={raw_boundary}"}
+    raw_cut_short = raw_bogus_cte.split(b"\r\n--" + raw_boundary.encode() + b"\r\nContent-Disposition: form-data; name=\"session\"")[0]
+    bad_offers = {"bad setup line": MINIMAL_OFFER + "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=setup:bogus\r\n",
+                  "bare media line": MINIMAL_OFFER + "m=audio\r\n",
+                  "garbage after v=0": "v=0 garbage"}
+
+    nested = aiohttp.MultipartWriter("mixed")
+    nested.append("x")
+    outer = aiohttp.MultipartWriter("form-data")
+    outer.append(nested)
+
+    cases = [
+        ("JSON array", dict(data=b"[]", headers=json_ct), "call request must be a JSON object"),
+        ("non-JSON", dict(data=b"not json", headers=json_ct), "call request is not valid JSON"),
+        ("deeply nested JSON", dict(data=b"[" * 100_000 + b"]" * 100_000, headers=json_ct),
+         "call request JSON is nested too deep"),
+        ("string session", dict(data=b'{"sdp": "v=0", "session": "bad"}', headers=json_ct),
+         "session must be a JSON object"),
+        ("non-string sdp", dict(data=b'{"sdp": 5}', headers=json_ct), "sdp must be a string starting with v=0"),
+        ("bad UTF-8 as JSON", dict(data=b"\xff\xfe", headers=json_ct), "call request is not valid UTF-8"),
+        ("bad UTF-8 as SDP", dict(data=b"\xff\xfe", headers={"Content-Type": "application/sdp"}),
+         "call request is not valid UTF-8"),
+        ("multipart string session", dict(data=multipart(b'"bad"')), "session must be a JSON object"),
+        ("multipart non-JSON session", dict(data=multipart(b"{not json")), "call request is not valid JSON"),
+        ("multipart unknown charset", dict(data=multipart(b"{}", charset="bogus")),
+         "unknown charset on a multipart part"),
+        ("multipart bogus transfer enc", dict(data=raw_bogus_cte, headers=raw_ct),
+         "unknown transfer encoding on a multipart part"),
+        ("multipart cut short", dict(data=raw_cut_short, headers=raw_ct), "malformed multipart body"),
+        ("nested multipart part", dict(data=outer), "nested multipart is not accepted"),
+    ] + [
+        (f"offer: {label}", dict(data=json.dumps({"sdp": offer}).encode(), headers=json_ct),
+         "SDP offer could not be negotiated")
+        for label, offer in bad_offers.items()
+    ]
+    ok = True
+    errors = ErrorLog()
+    with errors:
+        async with aiohttp.ClientSession() as http:
+            for label, kwargs, want in cases:
+                async with http.post(url, **kwargs) as resp:
+                    text = (await resp.text()).strip()
+                print(f"  {label:28} -> {resp.status} {text!r} (want 400 {want!r})")
+                ok &= resp.status == 400 and text == want
+            body = json.dumps({"sdp": MINIMAL_OFFER, "session": {"type": "quicksilver"}}).encode()
+            async with http.post(url, data=body, headers=json_ct) as resp:
+                created = resp.status == 201
+                print(f"  well-formed JSON call          -> {resp.status} (want 201)")
+            await asyncio.sleep(orphan_s + 0.5)
+            after = await session_count(http, base)
+        await runner.cleanup()  # inside the capture: a handler's error is logged as it finishes
+    print(f"  server errors logged: {len(errors.records)} (want 0), sessions after the orphan window: {after}")
+    for rec in errors.records:
+        print("  ERROR:", rec.getMessage())
+    return ok and created and after == 0 and not errors.records
+
+
+async def check_bad_ws_frame() -> bool:
+    runner, base = await start_in_process(Settings())
+    ws_url = "ws" + base[len("http"):] + "/v1/realtime"
+    errors = ErrorLog()
+    with errors:
+        async with aiohttp.ClientSession() as http:
+            async with http.ws_connect(ws_url) as ws:
+                await ws.send_str("[" * 100_000 + "]" * 100_000)
+                await ws.send_json({"type": "session.update", "session": {"type": "quicksilver"}})
+                msg = await asyncio.wait_for(ws.receive(), timeout=5.0)
+                got = json.loads(msg.data).get("type") if msg.type == aiohttp.WSMsgType.TEXT else str(msg.type)
+        await runner.cleanup()  # inside the capture: a handler's error is logged as it finishes
+    print(f"  after a 100k-deep frame, session.update answered with: {got}; server errors: {len(errors.records)}")
+    return got == "session.updated" and not errors.records
+
+
 async def session_count(http: aiohttp.ClientSession, base: str) -> int:
     async with http.get(f"{base}/healthz") as resp:
         return (await resp.json())["sessions"]
@@ -307,7 +428,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--key", default="FAKE_KEY_SENTINEL", help="invalid key for the bad-key check")
     ap.add_argument("--only", nargs="*", choices=["missing-key", "origin", "orphan", "bad-key", "late-sideband",
-                                                 "no-session-update", "remote-bind"])
+                                                 "no-session-update", "remote-bind", "bad-call-body",
+                                                 "bad-ws-frame"])
     args = ap.parse_args()
     logging.basicConfig(level=logging.WARNING)
     checks = {
@@ -318,6 +440,8 @@ def main() -> int:
         "late-sideband": lambda: asyncio.run(check_late_sideband(args.key)),
         "no-session-update": lambda: asyncio.run(check_no_session_update()),
         "remote-bind": lambda: asyncio.run(check_remote_bind()),
+        "bad-call-body": lambda: asyncio.run(check_bad_call_body()),
+        "bad-ws-frame": lambda: asyncio.run(check_bad_ws_frame()),
     }
     results = {}
     for name, fn in checks.items():
