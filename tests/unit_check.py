@@ -22,15 +22,17 @@
                 reader task and still closes the Flux socket
   loopback      is_loopback(): 127.0.0.1, 127.1.2.3, ::1, localhost pass; 0.0.0.0, LAN
                 addresses, hostnames, and "" fail
-  bad-messages  Codex messages with the right `type` but wrong member shapes (a string `session`,
-                a string `item`, a non-string `audio`) are handled without an exception and a
-                well-formed session.update still works on the same session
+  bad-messages  Codex messages with the right `type` but a string `session`, a `session.type`
+                that is not a string, a string `item`, a non-string `audio`, a missing `audio`,
+                or a null `output_text` raise no exception. A well-formed `session.update`
+                still works on the same session afterwards
   close-paths   VoiceSession.close() still closes Flux and drops the registry entry when the
-                peer connection refuses to close, and when close() itself is cancelled mid-drain
-  registry      a call whose sideband never attaches is dropped at the expiry window and leaves
-                no entry behind (/healthz reports 0, a late sideband gets 404); two sidebands
-                opened at once for one call get one 101 and one 409; an oversized offer is
-                refused with 413 before it is read
+                peer connection refuses to close; that refusal logs one WARNING naming only the
+                exception type, with no traceback. A close() cancelled mid-drain still releases
+                the session
+  registry      a call leaves no entry behind once its sideband closes (/healthz reports 0, a
+                late WebSocket attempt gets 404); two sidebands opened at once for one call get
+                one 101 and one 409; an oversized offer is refused with 413 before it is read
 
 Usage:
   python tests/unit_check.py
@@ -45,6 +47,7 @@ import logging
 import sys
 from pathlib import Path
 
+import aiohttp
 import av
 import numpy as np
 import websockets.exceptions
@@ -65,6 +68,7 @@ class FakeSideband:
 
     def __init__(self) -> None:
         self.sent: list[dict] = []
+        self.prepared = True  # a sideband that completed its upgrade
         self.closed = False
 
     async def send_json(self, event: dict) -> None:
@@ -151,8 +155,10 @@ class BlockingFlux(StubFlux):
     def __init__(self) -> None:
         super().__init__()
         self.release = asyncio.Event()
+        self.entered = asyncio.Event()  # set once feed() is running, so a test can wait for it
 
     async def feed(self, pcm: bytes) -> None:
+        self.entered.set()
         await self.release.wait()
         await super().feed(pcm)
 
@@ -490,15 +496,19 @@ async def check_close_paths() -> bool:
     s.pc = BrokenPeerConnection()  # type: ignore[assignment]
     dropped: list[str] = []
     s.on_closed = lambda: dropped.append(s.tag)
-    with CapturedLog("shim", logging.ERROR) as errors:
+    # The failure is one WARNING naming only the exception type, not an ERROR with a traceback.
+    with CapturedLog("shim", logging.WARNING) as errors:
         try:
             await s.close()
         except Exception as exc:  # noqa: BLE001
             print(f"  close() raised {type(exc).__name__}: {exc}")
             ok = False
-    if not s.closed or s.flux.closes != 1 or dropped != ["rtc_close1"] or len(errors.records) != 1:
+    warned = [r.getMessage() for r in errors.records
+              if r.levelno == logging.WARNING and r.exc_info is None]
+    if (not s.closed or s.flux.closes != 1 or dropped != ["rtc_close1"] or len(errors.records) != 1
+            or warned != ["[rtc_close1] peer connection close failed (RuntimeError)"]):
         print(f"  broken pc: closed {s.closed}, Flux closes {s.flux.closes}, registry hook {dropped}, "
-              f"errors logged {len(errors.records)}")
+              f"records logged {[r.getMessage() for r in errors.records]}")
         ok = False
     # close() is cancelled while its final drain is blocked on Flux: the session still ends.
     s = VoiceSession(Settings(), "rtc_close2")
@@ -510,7 +520,7 @@ async def check_close_paths() -> bool:
     frame.sample_rate = 48_000
     s._rtc_resampler.resample(frame)  # leaves a tail, so close() has something to drain
     closer = asyncio.create_task(s.close())
-    await asyncio.sleep(0)  # let close() reach the blocked feed()
+    await asyncio.wait_for(flux.entered.wait(), 2.0)  # close() is now blocked in feed()
     closer.cancel()
     try:
         await closer
@@ -525,7 +535,7 @@ async def check_close_paths() -> bool:
 
 
 async def check_registry() -> bool:
-    app = build_app(Settings(orphan_call_timeout_s=0.3))
+    app = build_app(Settings(orphan_call_timeout_s=1.5))
     async with TestClient(TestServer(app)) as client:
         r = await client.post("/v1/realtime/calls", data="v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n",
                               headers={"Content-Type": "application/sdp"})
@@ -538,7 +548,7 @@ async def check_registry() -> bool:
                 ws = await client.ws_connect("/v1/realtime", params={"call_id": call_id})
             except Exception as exc:  # noqa: BLE001
                 return getattr(exc, "status", -1)
-            await asyncio.sleep(0.1)  # hold it open while the other attempt is judged
+            await asyncio.sleep(0.5)  # hold it open while the other attempt is judged
             await ws.close()
             return 101
         # Slow the upgrade so both requests are in flight at once, which is the window the
@@ -553,10 +563,19 @@ async def check_registry() -> bool:
             pair = sorted(await asyncio.gather(sideband_status(), sideband_status()))
         finally:
             web.WebSocketResponse.prepare = real_prepare  # type: ignore[method-assign]
-        await asyncio.sleep(0.8)
+        # poll every 50 ms, up to 5 s, until /healthz reads 0
+        loop = asyncio.get_running_loop()
+        wait_until = loop.time() + 5.0
         after = (await (await client.get("/healthz")).json())["sessions"]
-        late = await client.get("/v1/realtime", params={"call_id": call_id})
-        late_status = late.status
+        while after != 0 and loop.time() < wait_until:
+            await asyncio.sleep(0.05)
+            after = (await (await client.get("/healthz")).json())["sessions"]
+        try:  # a real WebSocket attempt: a plain GET is refused with 400 before the call lookup
+            late_ws = await client.ws_connect("/v1/realtime", params={"call_id": call_id})
+            await late_ws.close()
+            late_status = 101
+        except aiohttp.WSServerHandshakeError as exc:
+            late_status = exc.status
         big = await client.post("/v1/realtime/calls", data=b"", headers={
             "Content-Type": "application/sdp", "Content-Length": str(64 * 1024 * 1024)})
         big_status = big.status
@@ -565,10 +584,10 @@ async def check_registry() -> bool:
         print(f"  call returned {status} and /healthz saw {during} session(s); wanted 201 and 1")
         ok = False
     if after != 0:
-        print(f"  /healthz still reports {after} session(s) after the orphan window")
+        print(f"  /healthz still reports {after} session(s) after the sidebands closed")
         ok = False
     if late_status != 404:
-        print(f"  sideband for the expired call returned {late_status}, wanted 404")
+        print(f"  late WebSocket attempt for the released call returned {late_status}, wanted 404")
         ok = False
     if pair != [101, 409]:
         print(f"  two sidebands at once returned {pair}, wanted [101, 409]")

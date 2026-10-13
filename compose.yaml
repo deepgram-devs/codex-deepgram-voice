@@ -51,13 +51,14 @@ services:
       - DEEPGRAM_API_KEY
     command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v2", "--session-type", "realtime"]
 
-  # No key and no network: the twelve offline session-logic checks listed in the README table.
+  # No key and no network: the twelve offline session-logic checks listed under the README table.
   unit-check:
     build: .
     image: codex-flux-voice
     command: ["python", "tests/unit_check.py"]
 
-  # No real key needed: uses a fake key against live Flux and checks it never reaches the logs.
+  # No real key needed: bad-key and late-sideband send a fake key to live Flux (remote-bind
+  # sets one too but never reaches Flux) and check it never reaches the logs.
   hardening-check:
     build: .
     image: codex-flux-voice

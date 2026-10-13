@@ -4,7 +4,7 @@ waiting for the Flux reader failed: reader failed
 [rtc_cap] 5 events (329 bytes) queued and Codex never sent session.update; closing the session
 [rtc_cap] 3 events (197 bytes) queued and Codex never sent session.update; closing the session
 [rtc_shapes] input_audio_buffer.append carried invalid base64; frame dropped
-[rtc_434ab9788f196aa745db5508] second sideband for the same call refused
+[rtc_9d48520a79e3ed419368ec05] second sideband for the same call refused
 sideband for unknown or expired call id
 [prefix] PASS
 [origin] PASS

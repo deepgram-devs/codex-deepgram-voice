@@ -36,10 +36,13 @@ from urllib.parse import urlsplit
 
 import av
 import numpy as np
+import aiohttp.http_exceptions
 import websockets
 from aiohttp import BodyPartReader, WSMsgType, web
+from aiohttp.web import RequestPayloadError
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 from aiortc.mediastreams import MediaStreamError
+from aiortc.sdp import SessionDescription
 
 from .flux_client import SAMPLE_RATE, FluxSession, TurnInfo, describe_connect_error
 
@@ -147,6 +150,7 @@ class VoiceSession:
         self.flushing = False  # draining `pending` after session.update
         self.ready = False  # session.updated has been sent on the current sideband socket
         self.attached = False  # a sideband WebSocket has connected at least once
+        self.handshake_failed = False  # prepare() raised; _teardown closes a sent 101 with 1011
         self.on_closed: Optional[Callable[[], None]] = None  # set by the app: drops the registry entry
         self._flux_lock = asyncio.Lock()  # one Flux stream per session, even with two audio sources
         self.flux_failed = False  # Flux could not start or died; stop feeding, error sent once
@@ -567,11 +571,20 @@ class VoiceSession:
             if self.pc is not None:
                 try:
                     await self.pc.close()
-                except Exception:  # noqa: BLE001
-                    log.exception("[%s] peer connection close failed", self.tag)
-            if self.ws is not None and not self.ws.closed:
+                except Exception as exc:  # noqa: BLE001
+                    # aiortc can fail to close a connection whose negotiation failed; log only
+                    # the type, since the traceback can quote the offer
+                    log.warning("[%s] peer connection close failed (%s)", self.tag,
+                                type(exc).__name__)
+            # close only after prepare() has created the response writer: close() on an
+            # unprepared WebSocketResponse raises
+            if self.ws is not None and self.ws.prepared and not self.ws.closed:
                 try:
-                    await self.ws.close()
+                    # prepare() raised; close with 1011 (the 101 may have been sent)
+                    if self.handshake_failed:
+                        await self.ws.close(code=1011, message=b"handshake failed")
+                    else:
+                        await self.ws.close()
                 except Exception:  # noqa: BLE001
                     log.exception("[%s] sideband close failed", self.tag)
             current = asyncio.current_task()
@@ -619,10 +632,14 @@ def build_app(settings: Settings) -> web.Application:
         if (request.content_length or 0) > MAX_CALL_BODY:
             return web.Response(status=413, text="offer too large")
         # Codex sends multipart (`sdp` + `session` parts); JSON and raw SDP are accepted too.
-        # Nothing here may raise on a malformed body: the client gets a 400 with the reason, and
-        # the body itself is never logged.
-        def reject(reason: str) -> web.Response:
-            log.warning("call request rejected: %s", reason)
+        # Nothing here may raise on a malformed body: the client gets a 400 with the reason. A body
+        # over the size cap raises aiohttp's 413. The body itself is never logged.
+        def reject(reason: str, detail: str | None = None) -> web.Response:
+            # `detail` goes to the log line only, never to the client
+            if detail:
+                log.warning("call request rejected: %s (%s)", reason, detail)
+            else:
+                log.warning("call request rejected: %s", reason)
             return web.Response(status=400, text=reason)
 
         sdp: object = None
@@ -630,13 +647,24 @@ def build_app(settings: Settings) -> web.Application:
         ctype = request.content_type
         try:
             if ctype == "multipart/form-data":
+                total = 0
                 async for part in await request.multipart():
                     if not isinstance(part, BodyPartReader):
                         return reject("nested multipart is not accepted")
+                    # read in chunks so the size cap applies to all parts together. The count is of
+                    # bytes as read from the request body: after Content-Encoding, before any
+                    # Content-Transfer-Encoding.
+                    data = bytearray()
+                    while chunk := await part.read_chunk(64 * 1024):
+                        data.extend(chunk)
+                        total += len(chunk)
+                        if total > MAX_CALL_BODY:
+                            raise web.HTTPRequestEntityTooLarge(max_size=MAX_CALL_BODY, actual_size=total)
                     if part.name == "sdp":
-                        sdp = (await part.read(decode=False)).decode("utf-8", "replace")
+                        sdp = bytes(part.decode(data)).decode("utf-8", "replace")
                     elif part.name == "session":
-                        session_json = json.loads(await part.text())
+                        charset = part.get_charset(default="utf-8")
+                        session_json = json.loads(bytes(part.decode(data)).decode(charset))
             elif ctype == "application/json":
                 body = await request.json()
                 if not isinstance(body, dict):
@@ -645,17 +673,34 @@ def build_app(settings: Settings) -> web.Application:
                 session_json = body.get("session")
             else:
                 sdp = await request.text()
+        except RequestPayloadError:
+            # The body does not match its Content-Encoding (e.g. gzip declared, plain bytes
+            # sent). aiohttp logs the payload error a second time after the response unless
+            # the connection is closed and the payload is ended here.
+            resp = reject("call request body does not match its Content-Encoding")
+            resp.force_close()
+            request.content.feed_eof()
+            return resp
+        except ConnectionError:  # the client disconnected before the body was complete
+            # the client has disconnected, so this 400 is not delivered; it keeps aiohttp from
+            # logging the reset as a server error
+            return reject("client disconnected mid-body")
         except json.JSONDecodeError:
             return reject("call request is not valid JSON")
         except UnicodeDecodeError:
-            return reject("call request is not valid UTF-8")
+            return reject("call request body is not valid text for its charset")
         except RecursionError:
             return reject("call request JSON is nested too deep")
         except LookupError:
-            return reject("unknown charset on a multipart part")
+            return reject("unknown charset in Content-Type")
         except RuntimeError:
-            return reject("unknown transfer encoding on a multipart part")
-        except ValueError:  # no boundary, or the body ends before the closing boundary
+            return reject("unknown Content-Transfer-Encoding in a multipart part")
+        except ValueError:
+            # the reason depends on the content type; a multipart body gets the multipart reason
+            # even when the ValueError came from JSON inside a part
+            return reject("malformed multipart body" if ctype == "multipart/form-data"
+                          else "call request could not be parsed")
+        except aiohttp.http_exceptions.HttpProcessingError:  # e.g. a part header without a colon
             return reject("malformed multipart body")
         if session_json is None:
             session_json = {}
@@ -663,6 +708,30 @@ def build_app(settings: Settings) -> web.Application:
             return reject("session must be a JSON object")
         if not isinstance(sdp, str) or not sdp.startswith("v=0"):
             return reject("sdp must be a string starting with v=0")
+        try:
+            # json.loads accepts a lone surrogate escape; aiortc would negotiate it and echo it
+            # into an answer that cannot be encoded
+            sdp.encode("utf-8")
+        except UnicodeEncodeError:
+            return reject("sdp is not valid text")
+        # aiortc fails a BUNDLE token with no media line only after its background connect task
+        # has started, and that task then fails with an unretrieved exception; check it here with
+        # aiortc's own parser, so the mids are the ones aiortc will see
+        try:
+            desc = SessionDescription.parse(sdp)
+        except Exception as exc:  # the parser raises assorted types on a malformed offer
+            return reject("SDP offer could not be parsed", detail=type(exc).__name__)
+        mids = {m.rtp.muxId for m in desc.media if m.rtp.muxId}
+        for group in desc.group:
+            if group.semantic == "BUNDLE" and any(str(item) not in mids for item in group.items):
+                return reject("BUNDLE group names a mid that no media line has")
+        # aioice keeps retrying a check to a port-0 candidate, and the retry fails with an ERROR
+        # when the session closes; aiortc's parser also passes ports past 65535,
+        # which fail with "Fatal write error on datagram transport" ERRORs
+        for m in desc.media:
+            for c in m.ice_candidates:
+                if not 1 <= c.port <= 65535:
+                    return reject("ICE candidate port out of range")
 
         call_id = f"rtc_{secrets.token_hex(12)}"
         session = VoiceSession(settings, call_id)
@@ -672,17 +741,20 @@ def build_app(settings: Settings) -> web.Application:
         log.info("[%s] call created (session type %s, query %s)", call_id, session.session_type,
                  dict(request.query) or "{}")
         try:
-            answer = await session.start_webrtc(sdp)
+            answer = (await session.start_webrtc(sdp)).encode()
+        except asyncio.CancelledError:
+            await session.close()  # cancelled at shutdown: release the session, then propagate
+            raise
         except Exception as exc:  # noqa: BLE001
             # aiortc raises ValueError, KeyError, IndexError, or AssertionError depending on
-            # which line of a bad offer it trips on; all of them are the client's offer. Only
-            # the exception type is logged: the message can quote the offer.
-            log.warning("[%s] offer rejected by aiortc (%s)", call_id, type(exc).__name__)
+            # which line of a bad offer it trips on; all of them are the client's offer. Encoding
+            # the answer is inside the try so any failure after register() releases the session.
+            # Only the exception type is logged: the message can quote the offer.
             await session.close()  # releases the peer connection and the registry entry
-            return reject("SDP offer could not be negotiated")
+            return reject("SDP offer could not be negotiated", type(exc).__name__)
         session.spawn(expire_if_orphaned(session), f"expire-{call_id}")
         location = f"{settings.location_prefix}/realtime/calls/{call_id}"
-        return web.Response(status=201, body=answer.encode(), content_type="application/sdp",
+        return web.Response(status=201, body=answer, content_type="application/sdp",
                             headers={"Location": location})
 
     async def expire_if_orphaned(session: VoiceSession) -> None:
@@ -695,6 +767,12 @@ def build_app(settings: Settings) -> web.Application:
         await session.close()
 
     async def realtime_ws(request: web.Request) -> web.StreamResponse:
+        ws = web.WebSocketResponse(heartbeat=20.0, max_msg_size=8 * 1024 * 1024)
+        if not ws.can_prepare(request).ok:
+            # Checked before any session is looked up, registered, or claimed, so a plain GET
+            # leaves no state behind and cannot block the real sideband of a call.
+            log.warning("realtime endpoint request rejected: request is not a WebSocket upgrade")
+            return web.Response(status=400, text="request is not a WebSocket upgrade")
         call_id = request.query.get("call_id")
         if call_id:
             session = app["sessions"].get(call_id)
@@ -709,15 +787,71 @@ def build_app(settings: Settings) -> web.Application:
             session = VoiceSession(settings, None)
             register(session)
             log.info("[%s] WebSocket transport session (no call)", session.session_id)
-        ws = web.WebSocketResponse(heartbeat=20.0, max_msg_size=8 * 1024 * 1024)
         session.ws = ws  # claimed before the upgrade awaits, so a concurrent second sideband sees it
-        await ws.prepare(request)
         try:
+            # If prepare() fails, the 400 or 500 below reaches the client only when the 101 was
+            # not sent; if prepare() raised after sending the 101, _teardown closes the socket
+            # with code 1011. session.ws stays set either way: _teardown closes it only if
+            # prepare() got as far as creating the response writer.
+            try:
+                await ws.prepare(request)
+            except OSError as exc:  # includes ConnectionError: the client disconnected mid-handshake
+                session.handshake_failed = True
+                log.warning("[%s] WebSocket handshake failed (%s)", session.tag, type(exc).__name__)
+                return web.Response(status=400, text="WebSocket handshake failed")
+            except Exception:  # noqa: BLE001  # a shim bug: keep the traceback visible
+                session.handshake_failed = True
+                log.exception("[%s] WebSocket handshake failed inside the shim", session.tag)
+                return web.Response(status=500, text="WebSocket handshake failed inside the shim")
             await session.run_ws(ws)
         finally:
-            await session.close()
+            await session.close()  # releases the claim and the registry entry either way
         return ws
 
+    # aioice 0.10.2: a STUN check to a candidate that never answers schedules
+    # Transaction.__retry with call_later. When the retry fires after the session closed the
+    # transport, it raises AttributeError ('NoneType' object has no attribute
+    # 'call_exception_handler'), which asyncio logs as an ERROR "Exception in callback
+    # Transaction.__retry()". Only that failure is filtered: the callback's module must be
+    # `aioice.stun`, its qualified name must end in `Transaction.__retry`, the exception must
+    # be an AttributeError, and its message must contain "'NoneType' object has no attribute".
+    # A bound method's __module__ and __qualname__ are its function's, and the __qualname__ is
+    # `Transaction.__retry`, unmangled. The module check keeps same-named classes elsewhere out.
+    # The match is not on the handle's repr, which also quotes the callback's arguments. The
+    # first occurrence per loop logs one WARNING; later ones are dropped. The wrapper
+    # delegates everything it does not match to the loop's previous handler. It is installed
+    # once per loop and stays for the loop's lifetime, because aioice retries can fire after
+    # the app that created the connection has been cleaned up.
+    async def install_loop_exception_handler(_app: web.Application) -> None:
+        loop = asyncio.get_running_loop()
+        if getattr(loop, "_codex_shim_aioice_handler", None) is not None:
+            return
+        previous = loop.get_exception_handler()
+        warned = False
+
+        def handler(loop_: asyncio.AbstractEventLoop, context: dict) -> None:
+            nonlocal warned
+            cb = getattr(context.get("handle"), "_callback", None)
+            name = getattr(cb, "__qualname__", "")
+            exc = context.get("exception")
+            if (getattr(cb, "__module__", "") == "aioice.stun"
+                    and isinstance(name, str) and name.endswith("Transaction.__retry")
+                    and isinstance(exc, AttributeError)
+                    and "'NoneType' object has no attribute" in str(exc)):
+                if not warned:
+                    warned = True
+                    log.warning("aioice STUN retry fired after its transport closed "
+                                "(AttributeError); not an error")
+                return
+            if previous is not None:
+                previous(loop_, context)
+            else:
+                loop_.default_exception_handler(context)
+
+        loop.set_exception_handler(handler)
+        loop._codex_shim_aioice_handler = handler  # type: ignore[attr-defined]
+
+    app.on_startup.append(install_loop_exception_handler)
     app.router.add_get("/healthz", healthz)
     app.router.add_route("*", "/{tail:.*}", dispatch)
     return app

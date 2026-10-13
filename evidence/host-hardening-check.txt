@@ -4,30 +4,74 @@ WARNING:shim:rejected GET /v1/realtime from non-local Origin
 WARNING:shim:rejected GET /v1/realtime from non-local Origin
 WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
 WARNING:shim:call request rejected: sdp must be a string starting with v=0
-WARNING:shim:[rtc_3db9b125f640f5f10f0a6f71] no sideband after 2s; dropping the call
-WARNING:shim:[sess_0d9f1f902353a5ce] audio before session.update ignored
-WARNING:shim:[sess_0d9f1f902353a5ce] no session.update after 1s; closing the sideband
+WARNING:shim:[rtc_e9cbb43c8f2178bbc39b4719] no sideband after 2s; dropping the call
+WARNING:shim:[sess_def40097737586df] audio before session.update ignored
+WARNING:shim:[sess_def40097737586df] no session.update after 1s; closing the sideband
 WARNING:shim:call request rejected: call request must be a JSON object
 WARNING:shim:call request rejected: call request is not valid JSON
 WARNING:shim:call request rejected: call request JSON is nested too deep
 WARNING:shim:call request rejected: session must be a JSON object
 WARNING:shim:call request rejected: sdp must be a string starting with v=0
-WARNING:shim:call request rejected: call request is not valid UTF-8
-WARNING:shim:call request rejected: call request is not valid UTF-8
+WARNING:shim:call request rejected: call request body is not valid text for its charset
+WARNING:shim:call request rejected: call request body is not valid text for its charset
 WARNING:shim:call request rejected: session must be a JSON object
 WARNING:shim:call request rejected: call request is not valid JSON
-WARNING:shim:call request rejected: unknown charset on a multipart part
-WARNING:shim:call request rejected: unknown transfer encoding on a multipart part
+WARNING:shim:call request rejected: unknown charset in Content-Type
+WARNING:shim:call request rejected: unknown Content-Transfer-Encoding in a multipart part
+WARNING:shim:call request rejected: malformed multipart body
 WARNING:shim:call request rejected: malformed multipart body
 WARNING:shim:call request rejected: nested multipart is not accepted
-WARNING:shim:[rtc_6969681fa938937cb8fae4f5] offer rejected by aiortc (KeyError)
-WARNING:shim:call request rejected: SDP offer could not be negotiated
-WARNING:shim:[rtc_748f3b8a06886a9d084c8d0c] offer rejected by aiortc (AssertionError)
-WARNING:shim:call request rejected: SDP offer could not be negotiated
-WARNING:shim:[rtc_011bbf382d4524e053f22f3c] offer rejected by aiortc (ValueError)
-WARNING:shim:call request rejected: SDP offer could not be negotiated
-WARNING:shim:[rtc_8c353f3b1cd0b88305be8f54] no sideband after 0s; dropping the call
-WARNING:shim:[sess_46bd38a8d5371372] non-JSON text frame from Codex
+WARNING:shim:call request rejected: call request body does not match its Content-Encoding
+WARNING:shim:call request rejected: call request body does not match its Content-Encoding
+WARNING:shim:call request rejected: call request body does not match its Content-Encoding
+WARNING:shim:call request rejected: malformed multipart body
+WARNING:shim:call request rejected: call request could not be parsed
+WARNING:shim:call request rejected: malformed multipart body
+WARNING:shim:call request rejected: call request is not valid JSON
+WARNING:shim:call request rejected: SDP offer could not be parsed (KeyError)
+WARNING:shim:call request rejected: SDP offer could not be parsed (AssertionError)
+WARNING:shim:call request rejected: SDP offer could not be parsed (AssertionError)
+WARNING:shim:call request rejected: SDP offer could not be parsed (ValueError)
+WARNING:shim:call request rejected: BUNDLE group names a mid that no media line has
+WARNING:shim:call request rejected: BUNDLE group names a mid that no media line has
+WARNING:shim:call request rejected: BUNDLE group names a mid that no media line has
+WARNING:shim:call request rejected: sdp is not valid text
+WARNING:shim:call request rejected: ICE candidate port out of range
+WARNING:shim:call request rejected: ICE candidate port out of range
+WARNING:shim:call request rejected: client disconnected mid-body
+WARNING:shim:[rtc_02a2556acad447d630079adc] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_063504bf292e78b882710c12] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_bd9447bfdc5d28f21eda1956] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_6f08c01ee960e471c88b058d] no sideband after 0s; dropping the call
+WARNING:shim:aioice STUN retry fired after its transport closed (AttributeError); not an error
+WARNING:shim:[sess_3a274423adc0caa1] non-JSON text frame from Codex
+WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
+WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
+WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
+WARNING:shim:[rtc_984726a0c66702f146ffa338] no sideband after 2s; dropping the call
+WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
+WARNING:shim:[sess_119058804104d537] WebSocket handshake failed (ConnectionResetError)
+WARNING:shim:[rtc_877a795e726e20dc953b69a3] WebSocket handshake failed (ConnectionResetError)
+WARNING:shim:[sess_435fdaf88c832f65] WebSocket handshake failed (OSError)
+WARNING:shim:[rtc_0671c9744b02765898f2a318] WebSocket handshake failed (OSError)
+ERROR:shim:[sess_ffdaf5d9ca6b6b02] WebSocket handshake failed inside the shim
+Traceback (most recent call last):
+  File "/Users/coreyweathers/code/codex-deepgram-voice/shim/server.py", line 797, in realtime_ws
+    await ws.prepare(request)
+  File "/Users/coreyweathers/code/codex-deepgram-voice/tests/hardening_check.py", line 668, in failing_prepare
+    raise make_exc()  # a fresh exception per attempt, so each traceback is separate
+    ^^^^^^^^^^^^^^^^
+TypeError: boom
+ERROR:shim:[rtc_5ab5cd2f171312fda6844b31] WebSocket handshake failed inside the shim
+Traceback (most recent call last):
+  File "/Users/coreyweathers/code/codex-deepgram-voice/shim/server.py", line 797, in realtime_ws
+    await ws.prepare(request)
+  File "/Users/coreyweathers/code/codex-deepgram-voice/tests/hardening_check.py", line 668, in failing_prepare
+    raise make_exc()  # a fresh exception per attempt, so each traceback is separate
+    ^^^^^^^^^^^^^^^^
+TypeError: boom
+WARNING:shim:[sess_7a6111749d385bfc] WebSocket handshake failed (OSError)
+WARNING:shim:[rtc_88be76d2188c3cd6e17a70af] WebSocket handshake failed (OSError)
 [missing-key]
   exit code 1, stderr: 'error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the shim again.'
   -> PASS
@@ -43,7 +87,7 @@ WARNING:shim:[sess_46bd38a8d5371372] non-JSON text frame from Codex
   POST Origin=None                             -> 400 (want 400)
   -> PASS
 [orphan]
-  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_3db9b125f640f5f10f0a6f71
+  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_e9cbb43c8f2178bbc39b4719
   sessions right after the call: 1, after 2.5s: 0
   -> PASS
 [bad-key]
@@ -71,22 +115,90 @@ WARNING:shim:[sess_46bd38a8d5371372] non-JSON text frame from Codex
   deeply nested JSON           -> 400 'call request JSON is nested too deep' (want 400 'call request JSON is nested too deep')
   string session               -> 400 'session must be a JSON object' (want 400 'session must be a JSON object')
   non-string sdp               -> 400 'sdp must be a string starting with v=0' (want 400 'sdp must be a string starting with v=0')
-  bad UTF-8 as JSON            -> 400 'call request is not valid UTF-8' (want 400 'call request is not valid UTF-8')
-  bad UTF-8 as SDP             -> 400 'call request is not valid UTF-8' (want 400 'call request is not valid UTF-8')
+  bad UTF-8 as JSON            -> 400 'call request body is not valid text for its charset' (want 400 'call request body is not valid text for its charset')
+  bad UTF-8 as SDP             -> 400 'call request body is not valid text for its charset' (want 400 'call request body is not valid text for its charset')
   multipart string session     -> 400 'session must be a JSON object' (want 400 'session must be a JSON object')
   multipart non-JSON session   -> 400 'call request is not valid JSON' (want 400 'call request is not valid JSON')
-  multipart unknown charset    -> 400 'unknown charset on a multipart part' (want 400 'unknown charset on a multipart part')
-  multipart bogus transfer enc -> 400 'unknown transfer encoding on a multipart part' (want 400 'unknown transfer encoding on a multipart part')
+  multipart unknown charset    -> 400 'unknown charset in Content-Type' (want 400 'unknown charset in Content-Type')
+  multipart bogus transfer enc -> 400 'unknown Content-Transfer-Encoding in a multipart part' (want 400 'unknown Content-Transfer-Encoding in a multipart part')
   multipart cut short          -> 400 'malformed multipart body' (want 400 'malformed multipart body')
+  multipart header, no colon   -> 400 'malformed multipart body' (want 400 'malformed multipart body')
   nested multipart part        -> 400 'nested multipart is not accepted' (want 400 'nested multipart is not accepted')
-  offer: bad setup line        -> 400 'SDP offer could not be negotiated' (want 400 'SDP offer could not be negotiated')
-  offer: bare media line       -> 400 'SDP offer could not be negotiated' (want 400 'SDP offer could not be negotiated')
-  offer: garbage after v=0     -> 400 'SDP offer could not be negotiated' (want 400 'SDP offer could not be negotiated')
+  JSON, gzip header, not gzip  -> 400 'call request body does not match its Content-Encoding' (want 400 'call request body does not match its Content-Encoding')
+  JSON, deflate hdr, bad bytes -> 400 'call request body does not match its Content-Encoding' (want 400 'call request body does not match its Content-Encoding')
+  multipart, gzip hdr, bad     -> 400 'call request body does not match its Content-Encoding' (want 400 'call request body does not match its Content-Encoding')
+  multipart, gzip cut to 30 B  -> 400 'malformed multipart body' (want 400 'malformed multipart body' or 'call request body does not match its Content-Encoding')
+  JSON int over 4300 digits    -> 400 'call request could not be parsed' (want 400 'call request could not be parsed')
+  multipart int, 5000 digits   -> 400 'malformed multipart body' (want 400 'malformed multipart body')
+  JSON, unknown encoding       -> 400 'call request is not valid JSON' (want 400 'call request is not valid JSON')
+  offer: bad setup line        -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
+  offer: bare media line       -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
+  offer: v=0 then a bare media line -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
+  offer: garbage after v=0     -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
+  offer: bad BUNDLE group      -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
+  offer: session-level mid     -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
+  offer: duplicate mid in section -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
+  offer: lone surrogate in mid -> 400 'sdp is not valid text' (want 400 'sdp is not valid text')
+  offer: ICE candidate on port 0 -> 400 'ICE candidate port out of range' (want 400 'ICE candidate port out of range')
+  offer: ICE candidate port 70000 -> 400 'ICE candidate port out of range' (want 400 'ICE candidate port out of range')
+  chunked body over the size cap -> 413, server errors 0 (want 413 and 0)
+  chunked multipart part over the size cap -> 413, server errors 0 (want 413 and 0)
+  two 3 MB parts, over the cap together -> 413, server errors 0 (want 413 and 0)
+  client disconnects mid-body  -> server errors 0 (want 0); sessions now 0
+  mid-body disconnect warning  -> 1 ['call request rejected: client disconnected mid-body'] (want 1 'client disconnected mid-body')
   well-formed JSON call          -> 201 (want 201)
+  well-formed gzip JSON call     -> 201 (want 201)
+  multipart base64 sdp part      -> 201 (want 201)
+  offer: ICE candidate that never answers -> 201, sessions now 0, server errors 0, STUN retry warnings 1 (want 201, 0, 0, 1)
   server errors logged: 0 (want 0), sessions after the orphan window: 0
   -> PASS
 [bad-ws-frame]
   after a 100k-deep frame, session.update answered with: session.updated; server errors: 0
   -> PASS
-RESULT: PASS {'missing-key': True, 'origin': True, 'orphan': True, 'bad-key': True, 'late-sideband': True, 'no-session-update': True, 'remote-bind': True, 'bad-call-body': True, 'bad-ws-frame': True}
+[bad-upgrade]
+  plain GET /v1/realtime -> 400 (want 400)                     ok
+  sessions after it: 0 (want 0)                                ok
+  create call -> 201 (want 201)                                ok
+  plain GET with the call_id -> 400 (want 400)                 ok
+  sessions after it: 1 (want 1)                                ok
+  real sideband afterwards answers session.update with: session.updated ok
+  sessions after the sideband closes: 0 (want 0)               ok
+  create call -> 201 (want 201)                                ok
+  plain GET with a second call_id -> 400 (want 400)            ok
+  sessions right after it: 1 (want 1, not closed early)        ok
+  sessions after the orphan window: 0 (want 0)                 ok
+  plain GET with an unknown call_id -> 400 (want 400)          ok
+  standalone WebSocket, ConnectionResetError -> 400 (want 400) ok
+  sessions after it: 0 (want 0)                                ok
+    ERROR records for it: 0 (want 0)                           ok
+  create call -> 201 (want 201)                                ok
+  call sideband, ConnectionResetError -> 400 (want 400)        ok
+  sessions after it (call closed): 0 (want 0)                  ok
+    ERROR records for it: 0 (want 0)                           ok
+  standalone WebSocket, OSError -> 400 (want 400)              ok
+  sessions after it: 0 (want 0)                                ok
+    ERROR records for it: 0 (want 0)                           ok
+  create call -> 201 (want 201)                                ok
+  call sideband, OSError -> 400 (want 400)                     ok
+  sessions after it (call closed): 0 (want 0)                  ok
+    ERROR records for it: 0 (want 0)                           ok
+  standalone WebSocket, TypeError -> 500 (want 500)            ok
+  sessions after it: 0 (want 0)                                ok
+    ERROR records for it: 1 on shim (want 1)                   ok
+    with a traceback: 1 (want 1)                               ok
+  create call -> 201 (want 201)                                ok
+  call sideband, TypeError -> 500 (want 500)                   ok
+  sessions after it (call closed): 0 (want 0)                  ok
+    ERROR records for it: 1 on shim (want 1)                   ok
+    with a traceback: 1 (want 1)                               ok
+  standalone WebSocket, OSError after the 101 -> CLOSE 1011 (want CLOSE 1011) ok
+  sessions after it: 0 (want 0)                                ok
+    ERROR records for it: 0 (want 0)                           ok
+  create call -> 201 (want 201)                                ok
+  call sideband, OSError after the 101 -> CLOSE 1011 (want CLOSE 1011) ok
+  sessions after it (call closed): 0 (want 0)                  ok
+    ERROR records for it: 0 (want 0)                           ok
+  server errors logged: 0 (want 0; 2 expected from the simulated shim bug not counted)
+  -> PASS
+RESULT: PASS {'missing-key': True, 'origin': True, 'orphan': True, 'bad-key': True, 'late-sideband': True, 'no-session-update': True, 'remote-bind': True, 'bad-call-body': True, 'bad-ws-frame': True, 'bad-upgrade': True}
 exit=0

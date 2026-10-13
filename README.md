@@ -169,8 +169,42 @@ Every check is also a `compose.yaml` service. `DEEPGRAM_API_KEY` must be exporte
 | `flux-check` | yes | The sample clip against live Flux: one `EndOfTurn` |
 | `e2e` | yes | The full Codex protocol path through the shim, WebRTC and sideband |
 | `ws-check-v1`, `ws-check-v2`, `ws-check-v2-handoff` | yes | The plain WebSocket transport in the v1 shape, the v2 transcription shape, and the v2 realtime shape with its `background_agent` handoff |
-| `hardening-check` | no (needs network) | Missing-key exit, cross-origin 403, orphaned-call expiry, a bad key producing one `error` event with no key in the `-v` output, that error reaching a call whose sideband attaches late, a client that never sends `session.update` being closed with code 1008 before any Flux connection, a non-loopback bind being refused without `--allow-unauthenticated-remote`, malformed call bodies (a JSON array, non-JSON, JSON nested past the parser, a string `session`, bad UTF-8, an unknown multipart charset or transfer encoding, a nested part, a body cut short, an offer aiortc cannot negotiate) getting a 400 naming the problem and no server error, and a sideband frame nested too deep to parse being dropped without a server error |
-| `unit-check` | no | Offline session logic: caption prefix at word boundaries, the Origin filter, event ordering before `session.updated`, caption revision, empty turns, concurrent and immediate close, the resampler tail reaching Flux, the pre-`session.update` queue cap, loopback detection, Codex messages with the wrong member shapes, close paths that must still release the session, registry cleanup and the second-sideband 409 |
+| `hardening-check` | no (needs network) | Startup refusals, cross-origin requests, orphaned calls, a bad key, late sidebands, clients that never send `session.update`, malformed call bodies and sideband frames, and bad WebSocket upgrades (list below) |
+| `unit-check` | no | Offline session logic: captions, event ordering, close paths, the resampler tail, queue caps, Origin and loopback checks, message validation, and the session registry (list below) |
+
+What `hardening-check` covers:
+
+- `missing-key`: the shim started without `DEEPGRAM_API_KEY` exits 1 with a message naming the variable.
+- `origin`: a WebSocket with no Origin or with a `localhost`, `127.0.0.1`, or `[::1]` Origin gets 101. A WebSocket with an `evil.example`, `localhost.evil.example`, or `null` Origin gets 403. A `POST /v1/realtime/calls` with an `evil.example` Origin gets 403, and one with no Origin gets 400 because its body is not an offer.
+- `orphan`: a call whose sideband never attaches leaves the registry after the expiry window.
+- `bad-key`: the real shim at `-v` with a fake key sends one Codex `error` event after one Flux connect attempt, and the key appears nowhere in its output.
+- `late-sideband`: a WebRTC call whose audio fails against Flux before its sideband attaches ~3 s later gets the queued `error` after `session.updated`, with one Flux connect attempt and no key in the output.
+- `no-session-update`: a WebSocket client that streams audio but never sends `session.update` opens no Flux connection, is closed with code 1008 at the deadline, and leaves the registry.
+- `remote-bind`: `--host 0.0.0.0` exits 2 without `--allow-unauthenticated-remote`, and with the flag the shim answers `/healthz` and logs that there is no client authentication.
+- `bad-call-body`: each malformed call request below gets a 400 naming the problem, except the 413 cases, the disconnect case (see below), and the ICE-candidate-never-answers offer (see Offers), and no case logs a server error.
+  - JSON shape and syntax: a JSON array, non-JSON, JSON nested too deep, a string `session`, and a non-string `sdp` each get their own reason. A JSON integer of 5000 digits, past Python's digit limit, gets "call request could not be parsed". The same integer inside a multipart `session` part gets "malformed multipart body" instead (the reason depends on the content type).
+  - Encoding and charset: bad UTF-8 sent as JSON and as SDP gets "call request body is not valid text for its charset". A gzip JSON body and a gzip multipart body that do not match their Content-Encoding get "call request body does not match its Content-Encoding". So does a deflate JSON body whose bytes are not deflate at all; a deflate stream cut short is rejected by aiohttp itself and is not sent here. Non-JSON bytes under an unknown Content-Encoding get "call request is not valid JSON".
+  - Multipart: a string `session` part and a non-JSON `session` part get the same 400s as their JSON counterparts. An unknown charset, an unknown Content-Transfer-Encoding, and a nested part each get their own reason. A header without a colon and a body cut short are malformed multipart bodies. A gzip multipart body truncated to 30 bytes gets either "malformed multipart body" or "call request body does not match its Content-Encoding".
+  - Offers: eleven offers in five groups. Four offers aiortc's SDP parser rejects (a bad setup line, a bare media line after a full session header, `v=0` then a bare media line, garbage after `v=0`) get "SDP offer could not be parsed". Three offers whose BUNDLE group names a mid that no media line has are found by the same parser (an unknown token, a session-level `a=mid:9` before the `m=` line, a second `a=mid:9` in the audio section). Each gets "BUNDLE group names a mid that no media line has" before negotiation. An otherwise valid offer whose mid and BUNDLE group are a lone surrogate (`\ud800` in the JSON) gets "sdp is not valid text". Two minimal audio offers with an ICE candidate on port 0 and on port 70000 get "ICE candidate port out of range". An offer with an ICE candidate that never answers (`127.0.0.1 65535`) gets 201. aioice's STUN retry then fires a few seconds after the session closes and raises an AttributeError. The shim's loop exception handler logs it as one WARNING (the test asserts exactly one), so no ERROR is logged when the session closes. None of these offers logs a server error.
+  - Size cap and disconnect: a chunked JSON body or multipart part over the 4 MB cap gets 413, and so do two 3 MB multipart parts that are over it together. A client that disconnects mid-body logs a warning and no server error.
+  - What still gets 201: a well-formed call, a valid gzip body, and a multipart call whose `sdp` part is base64 with a Content-Transfer-Encoding header.
+- `bad-ws-frame`: a sideband frame nested too deep to parse is dropped without a server error, and a `session.update` on the same socket still gets `session.updated`.
+- `bad-upgrade`: a plain GET to the realtime endpoint gets 400 before any session is looked up. A live call keeps its state, so its real sideband still attaches and a second call's orphan timer still fires. An unknown call id gets the same 400. A handshake failure injected by patching `prepare` releases the session, answering 400 for a connection error, 500 with a logged traceback for a shim fault, and close code 1011 when the failure comes after the 101. The 400 and 1011 variants assert no server error. Each injected variant runs on both a standalone WebSocket and a call sideband.
+
+What `unit-check` covers:
+
+- `prefix`: the caption prefix is cut at word boundaries and never indexes past either string.
+- `origin`: the Origin filter passes no Origin and localhost, and rejects other hosts and `null`.
+- `ordering`: Flux events that arrive before `session.update` are queued and sent in order after `session.updated`, and later events go out directly.
+- `captions`: a Flux revision of a shown word appends from the stable prefix, the handoff carries the exact final transcript, an empty `EndOfTurn` sends nothing, and a repeated `StartOfTurn` does not re-send captions.
+- `double-close`: two concurrent closes of the Flux client close the socket once and raise nothing.
+- `immediate-close`: a close right after start, while the reader fails, or from inside the reader closes the socket exactly once without raising. So does Flux dropping the socket mid-stream, and the drop reaches the error path.
+- `tail`: the samples a resampler holds back reach Flux on `input_audio_buffer.commit` and session close for the WebSocket transport, and at track end and session close for WebRTC. Audio after a commit still flows, and audio before `session.update` is ignored.
+- `queue-cap`: events queued before `session.update` stop at the cap and the session closes, still closing the Flux socket.
+- `loopback`: `127.0.0.1`, `127.1.2.3`, `::1`, and `localhost` count as loopback, while `0.0.0.0`, LAN addresses, hostnames, and an empty string do not.
+- `bad-messages`: Codex messages with the right `type` but a string `session`, a `session.type` that is not a string, a string `item`, a non-string `audio`, a missing `audio`, or a null `output_text` raise no exception. A well-formed `session.update` still works on the same session afterwards.
+- `close-paths`: closing a session still closes Flux and drops the registry entry when the peer connection refuses to close. That refusal logs one WARNING naming only the exception type, with no traceback. A close cancelled mid-drain still releases the session.
+- `registry`: a call leaves no entry behind once its sideband closes: /healthz reports 0, and a late WebSocket attempt gets 404. Two sidebands opened at once for one call get one 101 and one 409. An oversized offer gets 413 before it is read.
 
 ```bash
 docker compose run --rm hardening-check
@@ -197,12 +231,12 @@ How the shim knows what Codex expects, with citations into the Codex source, is 
 
 ## What has been verified
 
-Every check under `tests/` was run in Docker and in a host venv, and the trimmed output is under `evidence/`. All of them except `unit_check.py` reach the live Flux API:
+Every check under `tests/` was run in Docker and in a host venv, with its trimmed output under `evidence/`; the host venv additionally has a Flux-defaults run of `wav_to_flux.py` (`evidence/host-wav-to-flux-defaults.txt`). All of them except `unit_check.py` reach the live Flux API:
 
 - `wav_to_flux.py` on the sample clip: one `EndOfTurn`, at confidence 0.820 with `eot_threshold` 0.8 and 0.778 with the Flux default of 0.7. The clip's filler pauses ("um", "uh") peaked at 0.340 and never ended the turn.
 - `e2e_fake_codex.py`: the full WebRTC call, sideband WebSocket, caption deltas, `turn_marked`, and one `handoff.requested` carrying the finished transcript, ending in `RESULT: PASS`.
 - `ws_transport_check.py` in the v1 shape, the v2 transcription shape, and the v2 realtime shape that hands off through a `background_agent` function call.
-- `hardening_check.py` (nine checks) and `unit_check.py` (twelve checks), as described in the table above.
+- `hardening_check.py` (ten checks) and `unit_check.py` (twelve checks), as listed under the table above.
 
 Not yet recorded: a session with a real microphone and the Codex TUI. The headless checks drive the shim with a fake Codex client built from the same source citations. The log sequence in [step 3](#3-talk) is what that session should produce, and the 10-minute test above is the matching check for turn detection.
 
