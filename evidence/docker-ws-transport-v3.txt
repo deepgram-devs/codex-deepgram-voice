@@ -1,0 +1,21 @@
+$ docker compose run --rm ws-check-v3
+ Container codex-deepgram-voice-ws-check-v3-run-add374168574 Creating
+ Container codex-deepgram-voice-ws-check-v3-run-add374168574 Created
+connected ws://127.0.0.1:46029/v1/live (dialect v3, no call id)
+WARNING:shim:[sess_09cec355a33c5201] audio before session.update ignored
+[  1.01s] input_audio.append before session.update: ignored (nothing within 1 s, socket open)
+[  1.01s] session.started id=sess_09cec355a33c5201
+[  2.12s] input_transcript.added: 'Yeah. Is'
+[  2.87s] input_transcript.added: ' As as much as'
+[  3.63s] input_transcript.added: ','
+[ 28.95s] turn.done role=user: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 28.95s] delegation.created id=handoff_b5cfd3b154bf: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 31.96s] sent session.close
+[ 32.07s] shim closed the socket (code 1000)
+
+summary:
+  session.started: 1, input_transcript.added: 60, turn.done: 1, delegation.created: 1, closed after session.close: True
+  problems: []
+  delegation text equals turn.done transcript (374 chars)
+RESULT: PASS
+exit=0

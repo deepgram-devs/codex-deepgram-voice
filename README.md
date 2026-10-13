@@ -9,12 +9,12 @@ This is an unofficial community shim, not affiliated with or endorsed by OpenAI.
 ```
 Codex CLI (F8) --WebRTC audio--> shim on 127.0.0.1:8765 --16 kHz PCM--> Deepgram Flux
 Codex CLI      <--sideband WS--- shim                    <--Update / EndOfTurn--- Flux
-                live captions, then handoff.requested(final transcript) => Codex runs the turn
+                live captions, then the handoff (final transcript) => Codex runs the turn
 ```
 
 ## Prerequisites
 
-- **Codex CLI 0.159 or newer**, installed with `npm install -g @openai/codex` and signed in. Voice mode shipped as a stable feature in 0.159; `codex features list` should show `realtime_conversation  stable  true`. The CLI bundled with the Codex desktop app can be older (0.142.5 has the feature off), so install the CLI itself.
+- **Codex CLI 0.159 or newer**, installed with `npm install -g @openai/codex` and signed in. Voice mode shipped as a stable feature in 0.159; `codex features list` should show `realtime_conversation  stable  true`. Both protocol generations work: 0.159 speaks realtime v1 (`/v1/realtime/calls`), 0.162 and later speak realtime v3 (`/v1/live`), and the shim serves both. The CLI bundled with the Codex desktop app can be older (0.142.5 has the feature off), so install the CLI itself.
 - **A Deepgram API key** in the `DEEPGRAM_API_KEY` environment variable. Get one from the [Deepgram console](https://console.deepgram.com/). The shim reads it from the environment only and never writes it anywhere.
 - **Python 3.11 or newer** on the host for the live microphone session. Check with `python3 --version`; the macOS system Python is often older.
 - **Microphone access for your terminal app.** Codex captures the audio, not the shim, so the terminal running Codex needs the permission (macOS: System Settings, Privacy & Security, Microphone).
@@ -39,7 +39,7 @@ python -m shim.server -v
 You should see:
 
 ```
-Codex voice shim listening on http://127.0.0.1:8765  (calls: /v1/realtime/calls, sideband: /v1/realtime)
+Codex voice shim listening on http://127.0.0.1:8765  (calls: /v1/realtime/calls and /v1/live, sideband: /v1/realtime and /v1/live/<call_id>)
 Codex config: experimental_realtime_webrtc_call_base_url = "http://127.0.0.1:8765/v1", experimental_realtime_ws_base_url = "ws://127.0.0.1:8765/v1"
 ```
 
@@ -53,7 +53,7 @@ In a second terminal, from the repo:
 ./run-codex-with-flux.sh
 ```
 
-The script checks that the shim is listening, then runs `codex` with the two endpoint settings passed as `-c key=value` overrides, which apply to that one run and touch no config file. Any extra arguments go through to `codex`. If the shim is on another port, set `SHIM_PORT` (and `SHIM_HOST`) in the environment first.
+The script checks that the shim is listening, then runs `codex` with the two endpoint settings passed as `-c key=value` overrides, which apply to that one run and touch no config file. It sets nothing else: Codex 0.159 (realtime v1) and 0.162+ (realtime v3) both work against these two URLs. Any extra arguments go through to `codex`. If the shim is on another port, set `SHIM_PORT` (and `SHIM_HOST`) in the environment first.
 
 To make it permanent instead, add two lines to your user config at `~/.codex/config.toml`:
 
@@ -68,12 +68,14 @@ Codex ignores these two keys in a repo-level `.codex/config.toml`, so they go in
 
 Press `F8` (or type `/voice`), say what you want done, and stop talking. `Ctrl+X` mutes, `F8` again ends the voice session.
 
-In the shim terminal you should see this sequence:
+In the shim terminal you should see this sequence. Codex 0.162 and later (realtime v3) log the two lines marked v3; Codex 0.159 (realtime v1) logs the `quicksilver` ones:
 
 ```
-call created (session type quicksilver, ...)
+call created (dialect v3, query {})                                     <- v3
+call created (session type quicksilver, ...)                            <- v1
 WebRTC connection state: connected
-sideband WebSocket attached
+sideband WebSocket attached (dialect v3); sending session.started       <- v3
+sideband WebSocket attached                                             <- v1, then session.update type=quicksilver
 first audio frame: 48000 Hz, stereo, 960 samples
 Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
 turn 0 StartOfTurn
@@ -96,7 +98,7 @@ Each row names the log line to look for in the shim terminal.
 | Codex shows an error mid-session | `Deepgram Flux error: ...` or `Deepgram Flux closed the stream unexpectedly` | Read the detail in the log, then press `F8` to start a new voice session. |
 | The launcher refuses to start | `shim is not listening on 127.0.0.1:8765` | Start the shim first (step 1). If it runs on another port, set `SHIM_PORT`. |
 | The shim cannot start on 8765 | `address already in use` | Find the other process with `lsof -i :8765`, or start the shim with `--port 8766` and run the launcher with `SHIM_PORT=8766`. |
-| Codex voice works but the shim logs nothing | no `call created` line | Codex is still talking to OpenAI. Use the launcher, or check the two keys are in `~/.codex/config.toml` and not a repo `.codex/config.toml`. Confirm `codex --version` is 0.159 or newer. |
+| Codex voice works but the shim logs nothing | no `call created` line | Codex is still talking to OpenAI. Use the launcher, or check the two keys are in `~/.codex/config.toml` and not a repo `.codex/config.toml`. Confirm `codex --version` is 0.159 or newer (0.159 posts to `/v1/realtime/calls`, 0.162+ to `/v1/live`). |
 | The call never connects | stuck at `WebRTC connection state: connecting` | Run the shim with `-v` and check the answer SDP carried a candidate for a local interface. A VPN can add many interfaces; Codex accepts at most 32 candidates. Try with the VPN off. |
 | Connected, but no audio | no `first audio frame` line | Grant the terminal app microphone access and check Codex is not muted (`Ctrl+X` toggles). |
 | The call is dropped after 30 seconds | `no sideband after 30s; dropping the call` | Codex never opened its WebSocket to the shim. Check `experimental_realtime_ws_base_url` points at `ws://127.0.0.1:8765/v1`. |
@@ -150,16 +152,18 @@ docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice \
 
 This streams the sample clip to Flux and prints every turn event. You should see `TurnInfo Update` lines with rising and falling `eot_conf` values and one `TurnInfo EndOfTurn` carrying the transcript.
 
-The full protocol check starts the shim inside the container and drives it with a fake Codex client that does what the real CLI does (WebRTC offer, multipart call creation, sideband WebSocket, `session.update`). It ends with `RESULT: PASS` when a `conversation.handoff.requested` carrying the finished transcript came back:
+The full protocol check starts the shim inside the container and drives it with a fake Codex client that does what the real CLI does (WebRTC offer, multipart call creation, sideband WebSocket, `session.update`). It ends with `RESULT: PASS` when a `conversation.handoff.requested` carrying the finished transcript came back. `--dialect v3` speaks realtime v3 instead, as Codex 0.162 does (`POST /v1/live`, sideband `/v1/live/<call_id>`, no `session.update`, `session.started` first, then `input_transcript.added`, `turn.done`, and `delegation.created`, and the sideband closed with code 1000 after `session.close`):
 
 ```bash
 docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/e2e_fake_codex.py audio/spacewalk-16k.wav
+docker run --rm -e DEEPGRAM_API_KEY codex-flux-voice python tests/e2e_fake_codex.py audio/spacewalk-16k.wav --dialect v3
 ```
 
 The same check can target a shim you already have running on the host, which is a good test before your first real session:
 
 ```bash
 python tests/e2e_fake_codex.py audio/spacewalk-16k.wav --shim http://127.0.0.1:8765/v1
+python tests/e2e_fake_codex.py audio/spacewalk-16k.wav --shim http://127.0.0.1:8765/v1 --dialect v3
 ```
 
 Every check is also a `compose.yaml` service. `DEEPGRAM_API_KEY` must be exported in your shell for the ones that reach Flux. Run one at a time:
@@ -167,10 +171,10 @@ Every check is also a `compose.yaml` service. `DEEPGRAM_API_KEY` must be exporte
 | Service | Needs a key | What it checks |
 | --- | --- | --- |
 | `flux-check` | yes | The sample clip against live Flux: one `EndOfTurn` |
-| `e2e` | yes | The full Codex protocol path through the shim, WebRTC and sideband |
-| `ws-check-v1`, `ws-check-v2`, `ws-check-v2-handoff` | yes | The plain WebSocket transport in the v1 shape, the v2 transcription shape, and the v2 realtime shape with its `background_agent` handoff |
+| `e2e`, `e2e-v3` | yes | The full Codex protocol path through the shim, WebRTC and sideband, in realtime v1 (Codex 0.159) and realtime v3 (Codex 0.162) |
+| `ws-check-v1`, `ws-check-v2`, `ws-check-v2-handoff`, `ws-check-v3` | yes | The plain WebSocket transport in the v1 shape, the v2 transcription shape, the v2 realtime shape with its `background_agent` handoff, and the v3 shape on `/v1/live`: `session.started` first, `input_transcript.added`, one `turn.done`, one `delegation.created` with the same text, audio sent before `session.update` ignored, and `session.close` closing the socket |
 | `hardening-check` | no (needs network) | Startup refusals, cross-origin requests, orphaned calls, a bad key, late sidebands, clients that never send `session.update`, malformed call bodies and sideband frames, and bad WebSocket upgrades (list below) |
-| `unit-check` | no | Offline session logic: captions, event ordering, close paths, the resampler tail, queue caps, Origin and loopback checks, message validation, and the session registry (list below) |
+| `unit-check` | no | Offline session logic: captions, event ordering, close paths, the resampler tail, queue caps, Origin and loopback checks, message validation, the session registry, and the realtime v3 events (list below) |
 
 What `hardening-check` covers:
 
@@ -189,7 +193,7 @@ What `hardening-check` covers:
   - Size cap and disconnect: a chunked JSON body or multipart part over the 4 MB cap gets 413, and so do two 3 MB multipart parts that are over it together. A client that disconnects mid-body logs a warning and no server error.
   - What still gets 201: a well-formed call, a valid gzip body, and a multipart call whose `sdp` part is base64 with a Content-Transfer-Encoding header.
 - `bad-ws-frame`: a sideband frame nested too deep to parse is dropped without a server error, and a `session.update` on the same socket still gets `session.updated`.
-- `bad-upgrade`: a plain GET to the realtime endpoint gets 400 before any session is looked up. A live call keeps its state, so its real sideband still attaches and a second call's orphan timer still fires. An unknown call id gets the same 400. A handshake failure injected by patching `prepare` releases the session, answering 400 for a connection error, 500 with a logged traceback for a shim fault, and close code 1011 when the failure comes after the 101. The 400 and 1011 variants assert no server error. Each injected variant runs on both a standalone WebSocket and a call sideband.
+- `bad-upgrade`: a plain GET to the realtime endpoint gets 400 before any session is looked up. A live call keeps its state, so its real sideband still attaches and a second call's orphan timer still fires. An unknown call id gets the same 400. A handshake failure injected by patching `prepare` releases the session, answering 400 for a connection error, 500 with a logged traceback for a shim fault, and close code 1011 when the failure comes after the 101. The 400 and 1011 variants assert no server error. Each injected variant runs on both a standalone WebSocket and a call sideband. For realtime v3, a call posted to `/v1/live` gets `Location: /v1/live/rtc_...`, a plain GET to `/v1/live/<call_id>` gets the same 400 before any lookup, an unknown call id over a real WebSocket gets 404, a second v3 sideband gets 409, and a v3 sideband that sends nothing gets `session.started` first and is still open 3 s later, past a 1 s `session.update` deadline.
 
 What `unit-check` covers:
 
@@ -205,10 +209,12 @@ What `unit-check` covers:
 - `bad-messages`: Codex messages with the right `type` but a string `session`, a `session.type` that is not a string, a string `item`, a non-string `audio`, a missing `audio`, or a null `output_text` raise no exception. A well-formed `session.update` still works on the same session afterwards.
 - `close-paths`: closing a session still closes Flux and drops the registry entry when the peer connection refuses to close. That refusal logs one WARNING naming only the exception type, with no traceback. A close cancelled mid-drain still releases the session.
 - `registry`: a call leaves no entry behind once its sideband closes: /healthz reports 0, and a late WebSocket attempt gets 404. Two sidebands opened at once for one call get one 101 and one 409. An oversized offer gets 413 before it is read.
+- `v3-events`: on a realtime v3 call sideband, `session.started` is the first event and the session is ready without a `session.update`, events queued before the attach follow it in order, and the `session.update` deadline does not close it. Flux `Update` and `EndOfTurn` become `input_transcript.added`, `turn.done` (role `user`), and `delegation.created` carrying the final text; `StartOfTurn` sends nothing; a Flux error carries a top-level `message`. `delegation.context.append` and `session.context.append` are logged, `input_audio.append` reaches Flux, and `session.close` ends the sideband.
 
 ```bash
 docker compose run --rm hardening-check
 docker compose run --rm e2e
+docker compose run --rm e2e-v3
 ```
 
 ### Run the shim in Docker
@@ -219,24 +225,25 @@ docker compose run --rm e2e
 
 | Codex does | Shim answers |
 | --- | --- |
-| `POST /v1/realtime/calls?intent=quicksilver&architecture=avas` (multipart `sdp` + `session`) | SDP answer, `Location: /v1/realtime/calls/rtc_...` |
+| `POST /v1/realtime/calls?intent=quicksilver&architecture=avas` (v1, Codex 0.159) or `POST /v1/live` (v3, Codex 0.162), multipart `sdp` + `session` | SDP answer, `Location: /v1/realtime/calls/rtc_...` (v1) or `/v1/live/rtc_...` (v3) |
 | WebRTC Opus audio track, `oai-events` data channel | Decodes audio, resamples to 16 kHz mono PCM, streams 80 ms chunks to Flux |
-| `GET /v1/realtime?call_id=...` then `session.update` | `session.updated` with a session id |
-| waits for transcript events | Flux `Update` becomes `conversation.input_transcript.delta`; Flux `EndOfTurn` becomes `conversation.input_transcript.turn_marked` and `conversation.handoff.requested` |
-| `conversation.handoff.append` with its reply text | Logged (spoken replies are out of scope for this shim) |
+| v1: `GET /v1/realtime?call_id=...` then `session.update` | `session.updated` with a session id |
+| v3: `GET /v1/live/<call_id>`, then nothing | `session.started` with a session id, sent as soon as the sideband attaches |
+| waits for transcript events | v1: Flux `Update` becomes `conversation.input_transcript.delta`; Flux `EndOfTurn` becomes `conversation.input_transcript.turn_marked` and `conversation.handoff.requested`. v3: `input_transcript.added`, then `turn.done` and `delegation.created` |
+| v1 `conversation.handoff.append`, v3 `delegation.context.append`, with its reply text | Logged (spoken replies are out of scope for this shim) |
 
-The plain WebSocket transport (`[realtime] transport = "websocket"`, used by app-server clients rather than the CLI) also works against `ws://127.0.0.1:8765/v1`, in both the v1 and v2 message shapes. Realtime v3 (`/live`) is not implemented.
+The plain WebSocket transport (`[realtime] transport = "websocket"`, used by app-server clients rather than the CLI) also works against `ws://127.0.0.1:8765/v1`, in the v1 and v2 message shapes on `/v1/realtime` and the v3 shape on `/v1/live` (audio as `input_audio.append`).
 
 How the shim knows what Codex expects, with citations into the Codex source, is in [DECISION.md](DECISION.md).
 
 ## What has been verified
 
-Every check under `tests/` was run in Docker and in a host venv, with its trimmed output under `evidence/`; the host venv additionally has a Flux-defaults run of `wav_to_flux.py` (`evidence/host-wav-to-flux-defaults.txt`). All of them except `unit_check.py` reach the live Flux API:
+Every check under `tests/` was run in Docker and in a host venv, with its trimmed output under `evidence/`; the host venv additionally has a Flux-defaults run of `wav_to_flux.py` (`evidence/host-wav-to-flux-defaults.txt`). All of them except `unit_check.py` connect to the live Flux API; `hardening_check.py` does so only with a deliberately bad key, so it needs network access but no key.
 
 - `wav_to_flux.py` on the sample clip: one `EndOfTurn`, at confidence 0.820 with `eot_threshold` 0.8 and 0.778 with the Flux default of 0.7. The clip's filler pauses ("um", "uh") peaked at 0.340 and never ended the turn.
-- `e2e_fake_codex.py`: the full WebRTC call, sideband WebSocket, caption deltas, `turn_marked`, and one `handoff.requested` carrying the finished transcript, ending in `RESULT: PASS`.
-- `ws_transport_check.py` in the v1 shape, the v2 transcription shape, and the v2 realtime shape that hands off through a `background_agent` function call.
-- `hardening_check.py` (ten checks) and `unit_check.py` (twelve checks), as listed under the table above.
+- `e2e_fake_codex.py`: the full WebRTC call, sideband WebSocket, caption deltas, `turn_marked`, and one `handoff.requested` carrying the finished transcript, ending in `RESULT: PASS`. With `--dialect v3` (host venv, `evidence/host-e2e-fake-codex-v3.txt`): `session.started` first, `input_transcript.added` captions, one `turn.done`, one `delegation.created` carrying the same transcript, and the sideband closed with code 1000 after `session.close`, ending in `RESULT: PASS`.
+- `ws_transport_check.py` in the v1 shape, the v2 transcription shape, the v2 realtime shape that hands off through a `background_agent` function call, and the v3 shape on `/v1/live` (`--dialect v3`, `evidence/host-ws-transport-v3.txt` and `evidence/docker-ws-transport-v3.txt`): `session.started` first, `input_transcript.added` captions, one `turn.done` and one `delegation.created` carrying the same transcript, an `input_audio.append` sent before `session.update` ignored, and the socket closed after `session.close`.
+- `hardening_check.py` (ten checks) and `unit_check.py` (thirteen checks), as listed under the table above.
 
 Not yet recorded: a session with a real microphone and the Codex TUI. The headless checks drive the shim with a fake Codex client built from the same source citations. The log sequence in [step 3](#3-talk) is what that session should produce, and the 10-minute test above is the matching check for turn detection.
 
@@ -256,8 +263,8 @@ Not yet recorded: a session with a real microphone and the Codex TUI. The headle
 - `shim/flux_client.py`: Flux STT WebSocket client, 80 ms chunking, TurnInfo parsing
 - `shim/server.py`: the Codex-facing realtime server (WebRTC, sideband, and WebSocket transport)
 - `tests/wav_to_flux.py`: stream a WAV to Flux and print turn events
-- `tests/e2e_fake_codex.py`: fake Codex client, full protocol check (`--shim` targets a running shim)
-- `tests/ws_transport_check.py`: plain WebSocket transport check (`--dialect v1|v2`, `--session-type`)
+- `tests/e2e_fake_codex.py`: fake Codex client, full protocol check (`--dialect v1|v3`, `--shim` targets a running shim)
+- `tests/ws_transport_check.py`: plain WebSocket transport check (`--dialect v1|v2|v3`, `--session-type`)
 - `tests/hardening_check.py`: the hardening checks (`--only` runs a subset)
 - `tests/unit_check.py`: offline session-logic checks
 - `evidence/`: trimmed output of the live runs recorded for this repo

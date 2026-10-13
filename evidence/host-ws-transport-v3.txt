@@ -1,0 +1,19 @@
+$ python tests/ws_transport_check.py audio/spacewalk-16k.wav --dialect v3
+WARNING:shim:[sess_67c0a267c0b76152] audio before session.update ignored
+connected ws://127.0.0.1:51556/v1/live (dialect v3, no call id)
+[  1.00s] input_audio.append before session.update: ignored (nothing within 1 s, socket open)
+[  1.00s] session.started id=sess_67c0a267c0b76152
+[  2.07s] input_transcript.added: 'Yeah. Is'
+[  2.82s] input_transcript.added: ' As as much as'
+[  3.58s] input_transcript.added: ','
+[ 28.23s] turn.done role=user: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 28.23s] delegation.created id=handoff_293b91e3e7e6: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 31.23s] sent session.close
+[ 31.29s] shim closed the socket (code 1000)
+
+summary:
+  session.started: 1, input_transcript.added: 60, turn.done: 1, delegation.created: 1, closed after session.close: True
+  problems: []
+  delegation text equals turn.done transcript (374 chars)
+RESULT: PASS
+exit=0

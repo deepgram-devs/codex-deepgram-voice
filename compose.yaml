@@ -1,6 +1,7 @@
 # One service at a time. DEEPGRAM_API_KEY is read from your shell, never stored here.
 #   DEEPGRAM_API_KEY=... docker compose run --rm flux-check
 #   DEEPGRAM_API_KEY=... docker compose run --rm e2e
+#   DEEPGRAM_API_KEY=... docker compose run --rm e2e-v3
 #   DEEPGRAM_API_KEY=... docker compose up shim      (the shim in a container; see README, "Run the shim in Docker")
 #   docker compose run --rm hardening-check
 #   docker compose run --rm unit-check
@@ -29,12 +30,28 @@ services:
       - DEEPGRAM_API_KEY
     command: ["python", "tests/e2e_fake_codex.py", "audio/spacewalk-16k.wav"]
 
+  # The same check in realtime v3 (POST /v1/live, sideband /v1/live/<call_id>), what Codex 0.162 sends.
+  e2e-v3:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/e2e_fake_codex.py", "audio/spacewalk-16k.wav", "--dialect", "v3"]
+
   ws-check-v1:
     build: .
     image: codex-flux-voice
     environment:
       - DEEPGRAM_API_KEY
     command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v1"]
+
+  # The v3 plain WebSocket transport (GET /v1/live, no call id, audio as input_audio.append).
+  ws-check-v3:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v3"]
 
   ws-check-v2:
     build: .
@@ -51,7 +68,7 @@ services:
       - DEEPGRAM_API_KEY
     command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v2", "--session-type", "realtime"]
 
-  # No key and no network: the twelve offline session-logic checks listed under the README table.
+  # No key and no network: the thirteen offline session-logic checks listed under the README table.
   unit-check:
     build: .
     image: codex-flux-voice

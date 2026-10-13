@@ -11,6 +11,9 @@ if ! nc -z "$SHIM_HOST" "$SHIM_PORT" 2>/dev/null; then
   echo "  . .venv/bin/activate && python -m shim.server -v" >&2
   exit 1
 fi
+# Codex 0.159 speaks realtime v1 (POST /v1/realtime/calls, sideband /v1/realtime?call_id=...);
+# Codex 0.162 speaks v3 (POST /v1/live, sideband /v1/live/<call_id>) for the TUI whatever
+# realtime.version or realtime.transport say. The shim serves both, so only the two URLs are set.
 exec codex \
   -c "experimental_realtime_webrtc_call_base_url=\"http://$SHIM_HOST:$SHIM_PORT/v1\"" \
   -c "experimental_realtime_ws_base_url=\"ws://$SHIM_HOST:$SHIM_PORT/v1\"" \

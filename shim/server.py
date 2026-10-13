@@ -1,19 +1,27 @@
 """Local realtime shim: Codex CLI voice in, Deepgram Flux STT underneath.
 
 Codex CLI starts voice as a WebRTC call plus a sideband WebSocket (see DECISION.md,
-question 2). This server stands in for OpenAI's realtime backend on localhost:
+question 2 and "Realtime v3"). Codex 0.159 speaks realtime v1 ("quicksilver"); 0.162 speaks
+v3 ("frameless bidi", /live). This server stands in for OpenAI's realtime backend on localhost
+and serves both:
 
-  POST {prefix}/realtime/calls           WebRTC offer in (multipart `sdp` + `session`, or
-                                         raw application/sdp), SDP answer out, call id in
+  POST {prefix}/realtime/calls           v1 call: WebRTC offer in (multipart `sdp` + `session`,
+                                         or raw application/sdp), SDP answer out, call id in
                                          the Location header
   GET  {prefix}/realtime?call_id=<id>    sideband WebSocket for that call (v1 "quicksilver")
   GET  {prefix}/realtime                 plain WebSocket transport (v1 or v2 shapes, audio as
                                          input_audio_buffer.append, base64 PCM16 @ 24 kHz)
+  POST {prefix}/live                     v3 call: same body and answer as the v1 call
+  GET  {prefix}/live/<call_id>           sideband WebSocket for a v3 call; the shim sends
+                                         session.started first, Codex sends no session.update
+  GET  {prefix}/live                     plain WebSocket transport in the v3 shape (audio as
+                                         input_audio.append, base64 PCM16 @ 24 kHz)
   GET  /healthz
 
 Audio from either path is resampled to 16 kHz mono PCM16 and streamed to Flux in 80 ms
 chunks. Flux `Update` events become live caption deltas; Flux `EndOfTurn` becomes the
-finished transcript plus a handoff request, which is what makes Codex start the turn.
+finished transcript plus a handoff request (v3: `delegation.created`), which is what makes
+Codex start the turn.
 
 Auth headers Codex sends (ChatGPT tokens, account ids) are ignored and never logged.
 """
@@ -121,6 +129,11 @@ def session_type_of(session: dict) -> str:
     return stype if isinstance(stype, str) and stype else "quicksilver"
 
 
+def is_live(path: str) -> bool:
+    """The v3 endpoint (`{prefix}/live`, realtime_call.rs:66-75), trailing slash already stripped."""
+    return path == "/live" or path.endswith("/live")
+
+
 def trim(text: str, n: int = 120) -> str:
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 3] + "..."
@@ -139,7 +152,7 @@ class VoiceSession:
         self.pc: Optional[RTCPeerConnection] = None
         self.pending: list[dict] = []
         self.pending_bytes = 0  # serialized size of `pending`, against Settings.pending_max_bytes
-        self.dialect = "v1"  # "v1" (quicksilver) or "v2" (public realtime shape)
+        self.dialect = "v1"  # "v1" (quicksilver), "v2" (public realtime shape), "v3" (/live)
         self.session_type = "quicksilver"
         self.last_sent = ""  # caption text already appended in Codex for the current turn
         self.prev_update = ""  # previous Flux Update transcript, to find the stable prefix
@@ -148,7 +161,7 @@ class VoiceSession:
         self.closed = False
         self._closing = False  # close() has started (it drains audio before it sets `closed`)
         self.flushing = False  # draining `pending` after session.update
-        self.ready = False  # session.updated has been sent on the current sideband socket
+        self.ready = False  # session.updated (v3: session.started) sent on the current sideband
         self.attached = False  # a sideband WebSocket has connected at least once
         self.handshake_failed = False  # prepare() raised; _teardown closes a sent 101 with 1011
         self.on_closed: Optional[Callable[[], None]] = None  # set by the app: drops the registry entry
@@ -209,7 +222,10 @@ class VoiceSession:
             return
         self.flux_failed = True
         log.error("[%s] %s", self.tag, message)
-        await self.emit({"type": "error", "error": {"type": "flux_error", "message": message}})
+        event: dict = {"type": "error", "error": {"type": "flux_error", "message": message}}
+        if self.dialect == "v3":
+            event["message"] = message  # protocol_common.rs:68-83 reads `message` first
+        await self.emit(event)
 
     async def feed_pcm16_16k(self, pcm: bytes) -> None:
         if self.closed or not pcm:
@@ -228,11 +244,12 @@ class VoiceSession:
                                          "Press F8 to start a new voice session.")
 
     async def feed_codex_ws_audio(self, b64: str) -> None:
-        """input_audio_buffer.append: base64 PCM16 mono at 24 kHz from the WebSocket transport."""
+        """input_audio_buffer.append (v1/v2) or input_audio.append (v3): base64 PCM16 mono at
+        24 kHz from the WebSocket transport."""
         try:
             raw = base64.b64decode(b64, validate=True)
         except (ValueError, TypeError):
-            log.warning("[%s] input_audio_buffer.append carried invalid base64; frame dropped", self.tag)
+            log.warning("[%s] audio append carried invalid base64; frame dropped", self.tag)
             return
         if len(raw) < 2:
             return
@@ -374,8 +391,17 @@ class VoiceSession:
         if text.startswith(self.last_sent):
             delta = text[len(self.last_sent):]
         else:
-            # Flux revised a word we already showed. Codex cannot rewrite, so append from the
-            # common prefix onward; the finished transcript in the handoff is still exact.
+            # Flux revised a word we already showed. A delta cannot rewrite, so append from the
+            # common prefix onward; the caption then holds the stale words plus the new tail.
+            # What happens at EndOfTurn depends on the dialect (codex-api realtime_websocket
+            # methods.rs:777-824, apply_transcript_done and append_handoff_input, rust-v0.162.1):
+            # - v1/v2: turn_marked / transcription.completed replaces the accumulated caption
+            #   with the exact final transcript.
+            # - v3: turn.done replaces it only when the final starts with the caption, which a
+            #   revision breaks, so the stale caption stays. delegation.created then adds the
+            #   exact final as a second user entry, because no entry matches it, and both
+            #   entries travel in the handoff's transcript.
+            # Either way the text Codex acts on (the handoff/delegation input) is exact.
             delta = text[len(stable_prefix(self.last_sent, text)):]
             if delta and not delta[0].isspace():
                 delta = " " + delta
@@ -387,12 +413,16 @@ class VoiceSession:
     def delta_event(self, delta: str) -> dict:
         if self.dialect == "v1":
             return {"type": "conversation.input_transcript.delta", "delta": delta}
+        if self.dialect == "v3":
+            return {"type": "input_transcript.added", "item": {"text": delta}}
         return {"type": "conversation.item.input_audio_transcription.delta",
                 "item_id": self.turn_item_id, "delta": delta}
 
     def done_event(self, text: str) -> dict:
         if self.dialect == "v1":
             return {"type": "conversation.input_transcript.turn_marked", "transcript": text}
+        if self.dialect == "v3":
+            return {"type": "turn.done", "turn": {"role": "user", "transcript": text}}
         return {"type": "conversation.item.input_audio_transcription.completed",
                 "item_id": self.turn_item_id, "transcript": text}
 
@@ -402,6 +432,11 @@ class VoiceSession:
         if self.dialect == "v1":
             return {"type": "conversation.handoff.requested", "handoff_id": handoff_id,
                     "item_id": item_id, "input_transcript": text}
+        if self.dialect == "v3":
+            # protocol_frameless_bidi.rs:75-99: the item id is the handoff id Codex replies to
+            return {"type": "delegation.created",
+                    "item": {"id": handoff_id, "type": "delegation", "target": "client",
+                             "content": [{"type": "input_text", "text": text}]}}
         if self.session_type == "transcription":
             return None  # v2 transcription sessions carry no handoff; Codex only records the text
         call_id = f"call_{secrets.token_hex(6)}"
@@ -425,8 +460,8 @@ class VoiceSession:
         s = self.settings
         if len(self.pending) >= s.pending_max_events or self.pending_bytes + size > s.pending_max_bytes:
             if not self.closed and not self._closing:
-                log.warning("[%s] %d events (%d bytes) queued and Codex never sent session.update; "
-                            "closing the session", self.tag, len(self.pending), self.pending_bytes)
+                log.warning("[%s] %d events (%d bytes) queued and the session never started on a "
+                            "sideband; closing the session", self.tag, len(self.pending), self.pending_bytes)
                 # emit() runs on the Flux reader task; close() must not wait on it from here.
                 self.spawn(self.close(), f"overflow-close-{self.tag}")
             return
@@ -438,8 +473,14 @@ class VoiceSession:
     async def run_ws(self, ws: web.WebSocketResponse) -> None:
         self.ws = ws
         self.attached = True
-        log.info("[%s] sideband WebSocket attached", self.tag)
-        self._deadline = self.spawn(self._session_update_deadline(ws), f"deadline-{self.tag}")
+        if self.dialect == "v3" and self.call_id:
+            # A v3 WebRTC sideband carries no session.update (ws_methods.rs:1082-1112): Codex
+            # waits for session.started instead, so send it now and skip the deadline.
+            log.info("[%s] sideband WebSocket attached (dialect v3); sending session.started", self.tag)
+            await self._start_and_flush(ws, self.started_event())
+        else:
+            log.info("[%s] sideband WebSocket attached", self.tag)
+            self._deadline = self.spawn(self._session_update_deadline(ws), f"deadline-{self.tag}")
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
                 try:
@@ -486,37 +527,52 @@ class VoiceSession:
             log.warning("[%s] audio before session.update ignored", self.tag)
         return False
 
+    def started_event(self) -> dict:
+        """v3's answer to a new sideband or a session.update (protocol_common.rs:27-44)."""
+        return {"type": "session.started", "session": {"id": self.session_id}}
+
+    async def _start_and_flush(self, ws: web.WebSocketResponse, first: dict) -> None:
+        """Send `first` (session.updated or session.started), then the queued events in order,
+        then mark the sideband ready. Events emitted during the flush queue behind it, so Codex
+        sees them in the order Flux produced them."""
+        self.flushing = True
+        try:
+            await ws.send_json(first)
+            while self.pending:
+                try:
+                    await ws.send_json(self.pending[0])
+                except (ConnectionResetError, RuntimeError):
+                    return  # the sideband went away mid-flush; the handler closes the session
+                self.pending_bytes -= len(json.dumps(self.pending.pop(0)))
+            self.ready = True
+            self._cancel_deadline()
+        except (ConnectionResetError, RuntimeError):
+            return
+        finally:
+            self.flushing = False
+
     async def handle_codex_message(self, data: dict) -> bool:
         """Returns True when the session should end."""
         kind = data.get("type")
         if kind == "session.update":
             session = as_dict(data.get("session"))  # a non-object `session` is treated as empty
+            ws = self.ws
+            if self.dialect == "v3":
+                # v3 sessions carry no `type`; the dialect came from the /live path
+                log.info("[%s] session.update -> dialect v3", self.tag)
+                if ws is not None and not ws.closed:
+                    await self._start_and_flush(ws, self.started_event())
+                return False
             stype = session_type_of(session)
             self.session_type = stype
             self.dialect = "v1" if stype == "quicksilver" else "v2"
             log.info("[%s] session.update type=%s -> dialect %s", self.tag, stype, self.dialect)
-            ws = self.ws
             if ws is None or ws.closed:
                 return False
-            updated = {"type": "session.updated", "session": {"id": self.session_id, "type": stype}}
-            # Events emitted during the flush queue behind it, so Codex sees them in order.
-            self.flushing = True
-            try:
-                await ws.send_json(updated)
-                while self.pending:
-                    try:
-                        await ws.send_json(self.pending[0])
-                    except (ConnectionResetError, RuntimeError):
-                        return False  # the sideband went away mid-flush; the handler closes the session
-                    self.pending_bytes -= len(json.dumps(self.pending.pop(0)))
-                self.ready = True
-                self._cancel_deadline()
-            except (ConnectionResetError, RuntimeError):
-                return False
-            finally:
-                self.flushing = False
+            await self._start_and_flush(
+                ws, {"type": "session.updated", "session": {"id": self.session_id, "type": stype}})
             return False
-        if kind == "input_audio_buffer.append":
+        if kind in ("input_audio_buffer.append", "input_audio.append"):
             if self._audio_allowed():
                 await self.feed_codex_ws_audio(data.get("audio", ""))  # non-base64 input is dropped there
             return False
@@ -527,6 +583,18 @@ class VoiceSession:
             text = data.get("output_text")
             log.info("[%s] Codex reply for %s: %s", self.tag, data.get("handoff_id"),
                      trim(text) if isinstance(text, str) else "(no text)")
+            return False
+        if kind == "delegation.context.append":
+            content = data.get("content")
+            parts = content if isinstance(content, list) else []
+            text = "".join(p.get("text") for p in parts
+                           if isinstance(p, dict) and isinstance(p.get("text"), str))
+            log.info("[%s] Codex reply for %s: %s", self.tag, data.get("delegation_item_id"),
+                     trim(text) if text else "(no text)")
+            return False
+        if kind == "session.context.append":
+            log.info("[%s] Codex session context (%s) ignored", self.tag,
+                     data.get("channel") if isinstance(data.get("channel"), str) else "no channel")
             return False
         if kind == "conversation.item.create":
             item = as_dict(data.get("item"))
@@ -614,13 +682,17 @@ def build_app(settings: Settings) -> web.Application:
             # Blocks browser pages (any site you visit) from opening Flux sessions on your key.
             log.warning("rejected %s %s from non-local Origin", request.method, path)
             return web.Response(status=403, text="cross-origin requests are not allowed")
+        parent, _, last = path.rpartition("/")
         if request.method == "POST" and path.endswith("/realtime/calls"):
-            return await create_call(request)
+            return await create_call(request, "v1")
+        if request.method == "POST" and is_live(path):
+            return await create_call(request, "v3")  # the dialect comes from the path: v3 has no session.type
         if request.method == "GET" and (path.endswith("/realtime") or path == "/realtime"):
-            return await realtime_ws(request)
-        if request.method == "GET" and path.endswith("/live"):
-            log.warning("realtime v3 (/live) requested; only v1 and v2 are supported")
-            return web.Response(status=404, text="realtime v3 (/live) is not supported by this shim")
+            return await realtime_ws(request, request.query.get("call_id"))
+        if request.method == "GET" and is_live(path):
+            return await realtime_ws(request, None, dialect="v3")
+        if request.method == "GET" and is_live(parent) and last:
+            return await realtime_ws(request, last)  # ws_methods.rs:1226-1260: call id as a path segment
         return web.Response(status=404, text="not found")
 
     def register(session: VoiceSession) -> None:
@@ -628,7 +700,7 @@ def build_app(settings: Settings) -> web.Application:
         app["sessions"][key] = session
         session.on_closed = lambda: app["sessions"].pop(key, None)
 
-    async def create_call(request: web.Request) -> web.Response:
+    async def create_call(request: web.Request, dialect: str) -> web.Response:
         if (request.content_length or 0) > MAX_CALL_BODY:
             return web.Response(status=413, text="offer too large")
         # Codex sends multipart (`sdp` + `session` parts); JSON and raw SDP are accepted too.
@@ -735,11 +807,17 @@ def build_app(settings: Settings) -> web.Application:
 
         call_id = f"rtc_{secrets.token_hex(12)}"
         session = VoiceSession(settings, call_id)
-        session.session_type = session_type_of(session_json)
-        session.dialect = "v1" if session.session_type == "quicksilver" else "v2"
-        register(session)
-        log.info("[%s] call created (session type %s, query %s)", call_id, session.session_type,
-                 dict(request.query) or "{}")
+        if dialect == "v3":
+            session.dialect = "v3"
+            session.session_type = "live"
+            register(session)
+            log.info("[%s] call created (dialect v3, query %s)", call_id, dict(request.query) or "{}")
+        else:
+            session.session_type = session_type_of(session_json)
+            session.dialect = "v1" if session.session_type == "quicksilver" else "v2"
+            register(session)
+            log.info("[%s] call created (session type %s, query %s)", call_id, session.session_type,
+                     dict(request.query) or "{}")
         try:
             answer = (await session.start_webrtc(sdp)).encode()
         except asyncio.CancelledError:
@@ -753,7 +831,10 @@ def build_app(settings: Settings) -> web.Application:
             await session.close()  # releases the peer connection and the registry entry
             return reject("SDP offer could not be negotiated", type(exc).__name__)
         session.spawn(expire_if_orphaned(session), f"expire-{call_id}")
-        location = f"{settings.location_prefix}/realtime/calls/{call_id}"
+        if dialect == "v3":
+            location = f"{settings.location_prefix}/live/{call_id}"
+        else:
+            location = f"{settings.location_prefix}/realtime/calls/{call_id}"
         return web.Response(status=201, body=answer, content_type="application/sdp",
                             headers={"Location": location})
 
@@ -766,14 +847,16 @@ def build_app(settings: Settings) -> web.Application:
                     settings.orphan_call_timeout_s)
         await session.close()
 
-    async def realtime_ws(request: web.Request) -> web.StreamResponse:
+    async def realtime_ws(request: web.Request, call_id: Optional[str],
+                          dialect: str = "v1") -> web.StreamResponse:
+        """A call's sideband when `call_id` is given (the call's dialect applies), else a plain
+        WebSocket transport session in `dialect` (v1 here means v1 or v2, set by session.update)."""
         ws = web.WebSocketResponse(heartbeat=20.0, max_msg_size=8 * 1024 * 1024)
         if not ws.can_prepare(request).ok:
             # Checked before any session is looked up, registered, or claimed, so a plain GET
             # leaves no state behind and cannot block the real sideband of a call.
             log.warning("realtime endpoint request rejected: request is not a WebSocket upgrade")
             return web.Response(status=400, text="request is not a WebSocket upgrade")
-        call_id = request.query.get("call_id")
         if call_id:
             session = app["sessions"].get(call_id)
             if session is None or session.closed:
@@ -785,8 +868,10 @@ def build_app(settings: Settings) -> web.Application:
             session.attached = True  # claim it before the upgrade so the orphan timer cannot fire mid-attach
         else:
             session = VoiceSession(settings, None)
+            session.dialect = dialect
             register(session)
-            log.info("[%s] WebSocket transport session (no call)", session.session_id)
+            log.info("[%s] WebSocket transport session (no call, dialect %s)", session.session_id,
+                     "v3" if dialect == "v3" else "v1/v2")
         session.ws = ws  # claimed before the upgrade awaits, so a concurrent second sideband sees it
         try:
             # If prepare() fails, the 400 or 500 below reaches the client only when the 101 was
@@ -858,7 +943,11 @@ def build_app(settings: Settings) -> web.Application:
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Codex CLI voice -> Deepgram Flux STT shim")
+    ap = argparse.ArgumentParser(
+        description="Codex CLI voice -> Deepgram Flux STT shim. Serves Codex realtime v1 "
+                    "(POST /v1/realtime/calls, sideband /v1/realtime?call_id=..., used by Codex 0.159) "
+                    "and v3 (POST /v1/live, sideband /v1/live/<call_id>, used by Codex 0.162), "
+                    "plus the plain WebSocket transport on /v1/realtime and /v1/live.")
     ap.add_argument("--host", default="127.0.0.1",
                     help="address to bind (default 127.0.0.1; anything non-loopback needs "
                          "--allow-unauthenticated-remote)")
@@ -910,8 +999,8 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not is_loopback(args.host):
         log.warning("binding %s: no client authentication; anyone who can reach this port can use "
                     "your Deepgram key. Publish it on 127.0.0.1 only.", args.host)
-    log.info("Codex voice shim listening on http://%s:%d  (calls: /v1/realtime/calls, sideband: /v1/realtime)",
-             args.host, args.port)
+    log.info("Codex voice shim listening on http://%s:%d  (calls: /v1/realtime/calls and /v1/live, "
+             "sideband: /v1/realtime and /v1/live/<call_id>)", args.host, args.port)
     log.info("Codex config: experimental_realtime_webrtc_call_base_url = \"http://%s:%d/v1\", "
              "experimental_realtime_ws_base_url = \"ws://%s:%d/v1\"", args.host, args.port, args.host, args.port)
     web.run_app(app, host=args.host, port=args.port, print=None, access_log=None)

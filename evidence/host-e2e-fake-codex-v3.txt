@@ -1,0 +1,51 @@
+$ python tests/e2e_fake_codex.py audio/spacewalk-16k.wav --dialect v3
+2026-10-13 20:19:18,045 INFO fake-codex shim started in-process at http://127.0.0.1:51487/v1
+2026-10-13 20:19:18,078 INFO shim [rtc_b53fb3b8cfa0cf0667805133] call created (dialect v3, query {})
+2026-10-13 20:19:18,080 INFO shim [rtc_b53fb3b8cfa0cf0667805133] WebRTC audio track received
+2026-10-13 20:19:18,083 INFO aiohttp.access 127.0.0.1 [13/Oct/2026:20:19:18 -0400] "POST /v1/live HTTP/1.1" 201 3003 "-" "Python/3.12 aiohttp/3.14.3"
+2026-10-13 20:19:18,083 INFO shim [rtc_b53fb3b8cfa0cf0667805133] WebRTC connection state: connecting
+2026-10-13 20:19:18,085 INFO shim [rtc_b53fb3b8cfa0cf0667805133] sideband WebSocket attached (dialect v3); sending session.started
+2026-10-13 20:19:18,120 INFO shim [rtc_b53fb3b8cfa0cf0667805133] WebRTC connection state: connected
+2026-10-13 20:19:18,125 INFO shim [rtc_b53fb3b8cfa0cf0667805133] data channel 'oai-events' opened by Codex
+2026-10-13 20:19:18,203 INFO shim [rtc_b53fb3b8cfa0cf0667805133] first audio frame: 48000 Hz, stereo, 960 samples
+2026-10-13 20:19:18,203 INFO flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+2026-10-13 20:19:18,388 INFO shim [rtc_b53fb3b8cfa0cf0667805133] Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
+2026-10-13 20:19:18,389 INFO flux Flux connected
+2026-10-13 20:19:18,772 INFO shim [rtc_b53fb3b8cfa0cf0667805133] turn 0 StartOfTurn
+2026-10-13 20:19:44,165 INFO shim [rtc_b53fb3b8cfa0cf0667805133] turn 0 EndOfTurn conf=0.910 -> Codex: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I thi...
+2026-10-13 20:19:44,167 INFO shim [rtc_b53fb3b8cfa0cf0667805133] Codex reply for handoff_3a09648ad945: Starting on it.
+2026-10-13 20:19:50,168 INFO shim [rtc_b53fb3b8cfa0cf0667805133] Codex closed the session
+2026-10-13 20:19:50,168 INFO shim [rtc_b53fb3b8cfa0cf0667805133] sideband WebSocket closed
+2026-10-13 20:19:50,230 INFO shim [rtc_b53fb3b8cfa0cf0667805133] audio track ended after 1442 frames
+2026-10-13 20:19:50,230 INFO shim [rtc_b53fb3b8cfa0cf0667805133] WebRTC connection state: closed
+2026-10-13 20:19:50,230 INFO shim [rtc_b53fb3b8cfa0cf0667805133] session closed after 32s, 1 handoff(s)
+2026-10-13 20:19:50,231 INFO aiohttp.access 127.0.0.1 [13/Oct/2026:20:19:18 -0400] "GET /v1/live/rtc_b53fb3b8cfa0cf0667805133 HTTP/1.1" 101 0 "-" "Python/3.12 aiohttp/3.14.3"
+POST http://127.0.0.1:51487/v1/live -> 201, Location: /v1/live/rtc_b53fb3b8cfa0cf0667805133, answer 2804 bytes
+sideband connected: ws://127.0.0.1:51487/v1/live/rtc_b53fb3b8cfa0cf0667805133
+[  0.04s] session.started id=sess_fa349c4e6caaddfe
+[  1.16s] input_transcript.added #1: 'Yeah. Is'
+[  1.88s] input_transcript.added #2: ' As as much as'
+[  2.60s] input_transcript.added #3: ','
+[  2.84s] input_transcript.added #4: ' um,'
+[  3.08s] input_transcript.added #5: " it's worth"
+[  6.20s] input_transcript.added #10: ' uh,'
+[ 10.76s] input_transcript.added #20: ' are'
+[ 15.08s] input_transcript.added #30: ' if'
+[ 18.68s] input_transcript.added #40: ' women who'
+[ 22.04s] input_transcript.added #50: ' qualified'
+[ 25.64s] input_transcript.added #60: ' have'
+[ 26.12s] turn.done role=user: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 26.12s] delegation.created id=handoff_3a09648ad945 text="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+done waiting
+shim closed the sideband after session.close (code 1000)
+
+summary:
+  first event:               session.started
+  session.started received:  True
+  input_transcript.added:    61
+  turn.done events:          1
+  delegation.created events: 1
+  closed with 1000 after session.close: True
+    -> Codex would start on: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I think many of us are looking forward to it just being normal. And, um, I think if it signifies anything, it is, uh, to honor the the women who came before us who, um, were skilled and qualified, um, and didn't get, uh, the same opportunities that we have today.
+RESULT: PASS
+exit=0

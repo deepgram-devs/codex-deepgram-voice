@@ -33,6 +33,13 @@
   registry      a call leaves no entry behind once its sideband closes (/healthz reports 0, a
                 late WebSocket attempt gets 404); two sidebands opened at once for one call get
                 one 101 and one 409; an oversized offer is refused with 413 before it is read
+  v3-events     a v3 (/live) call sideband: on attach, session.started is the first event and the
+                session is ready without a session.update; events queued before the attach follow
+                it in order; the session.update deadline does not close it; Update and EndOfTurn
+                become input_transcript.added, turn.done (role user), and delegation.created with
+                the final text; StartOfTurn sends nothing; a Flux error carries a top-level
+                `message`; delegation.context.append and session.context.append are logged,
+                input_audio.append reaches Flux, and session.close ends the sideband
 
 Usage:
   python tests/unit_check.py
@@ -46,12 +53,13 @@ import json
 import logging
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import aiohttp
 import av
 import numpy as np
 import websockets.exceptions
-from aiohttp import web
+from aiohttp import WSMsgType, web
 from aiohttp.test_utils import TestClient, TestServer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +84,27 @@ class FakeSideband:
 
     async def close(self) -> None:
         self.closed = True
+
+
+class ScriptedSideband(FakeSideband):
+    """A FakeSideband that run_ws() can iterate: yields the JSON messages pushed with send()."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.inbox: asyncio.Queue = asyncio.Queue()
+
+    def push(self, message: dict) -> None:
+        self.inbox.put_nowait(SimpleNamespace(type=WSMsgType.TEXT, data=json.dumps(message)))
+
+    async def close(self, **_kwargs) -> None:  # the deadline passes code= and message=
+        self.closed = True
+        self.inbox.put_nowait(SimpleNamespace(type=WSMsgType.CLOSE, data=None))
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        return await self.inbox.get()
 
 
 class FakeFluxSocket:
@@ -598,6 +627,95 @@ async def check_registry() -> bool:
     return ok
 
 
+async def check_v3_events() -> bool:
+    ok = True
+
+    def fail(message: str) -> None:
+        nonlocal ok
+        print(f"  {message}")
+        ok = False
+
+    s = VoiceSession(Settings(session_update_timeout_s=0.2), "rtc_v3")
+    s.dialect = "v3"  # what create_call sets for POST /live
+    s.flux = StubFlux()  # type: ignore[assignment]
+    # Flux events before the sideband attaches are queued.
+    await s.on_turn(turn("StartOfTurn", ""))
+    await s.on_turn(turn("Update", "Create a"))
+    await s.on_turn(turn("Update", "Create a file"))
+    queued = list(s.pending)
+    if [e["type"] for e in queued] != ["input_transcript.added"]:
+        fail(f"queued before attach: {queued}")
+    ws = ScriptedSideband()
+    s.ws = ws  # type: ignore[assignment]
+    shim_log = logging.getLogger("shim")
+    old_level = shim_log.level
+    shim_log.setLevel(logging.INFO)
+    try:
+        with CapturedLog("shim", logging.INFO) as logged:
+            runner = asyncio.create_task(s.run_ws(ws))  # type: ignore[arg-type]
+            await asyncio.sleep(0.4)  # past the 0.2 s session.update deadline
+            want_first = {"type": "session.started", "session": {"id": s.session_id}}
+            if not ws.sent or ws.sent[0] != want_first:
+                fail(f"first event {ws.sent[:1]}, wanted {want_first}")
+            if ws.sent[1:] != queued or s.pending:
+                fail(f"queued events after session.started: {ws.sent[1:]}, wanted {queued}")
+            if not s.ready or ws.closed:
+                fail(f"after attach: ready {s.ready}, closed by the deadline {ws.closed}")
+            before = len(ws.sent)
+            await s.on_turn(turn("EndOfTurn", "Create a file called hello.txt", conf=0.9))
+            out = ws.sent[before:]
+            final = "Create a file called hello.txt"
+            if [e["type"] for e in out] != ["input_transcript.added", "turn.done", "delegation.created"]:
+                fail(f"EndOfTurn sent {out}")
+            else:
+                shown = "".join(e["item"]["text"] for e in ws.sent if e["type"] == "input_transcript.added")
+                if shown != final or set(out[0]) != {"type", "item"} or set(out[0]["item"]) != {"text"}:
+                    fail(f"captions {shown!r} / {out[0]}")
+                if out[1] != {"type": "turn.done", "turn": {"role": "user", "transcript": final}}:
+                    fail(f"turn.done {out[1]}")
+                item = out[2]["item"]
+                handoff_id = item.get("id", "")
+                want = {"type": "delegation.created",
+                        "item": {"id": handoff_id, "type": "delegation", "target": "client",
+                                 "content": [{"type": "input_text", "text": final}]}}
+                if out[2] != want or not handoff_id.startswith("handoff_"):
+                    fail(f"delegation.created {out[2]}")
+            before = len(ws.sent)
+            await s.on_turn(turn("StartOfTurn", "", index=1))
+            if len(ws.sent) != before:
+                fail(f"StartOfTurn sent {ws.sent[before:]}")
+            await s.on_flux_error("boom")
+            err = ws.sent[-1]
+            if err.get("type") != "error" or err.get("message") != "boom":
+                fail(f"error event {err}")
+            ws.push({"type": "delegation.context.append", "delegation_item_id": "handoff_x",
+                     "channel": "commentary", "content": [{"type": "input_text", "text": "Starting on it."}]})
+            ws.push({"type": "delegation.context.append", "delegation_item_id": "handoff_y", "content": "bad"})
+            ws.push({"type": "session.context.append", "channel": "speakable",
+                     "content": [{"type": "input_text", "text": "ctx"}]})
+            s.flux_failed = False  # the simulated error above stopped audio; let it flow again
+            ws.push({"type": "input_audio.append", "audio": pcm_b64(2400)})
+            ws.push({"type": "input_audio.append", "audio": 5})
+            ws.push({"type": "session.close"})
+            await asyncio.wait_for(runner, timeout=2.0)
+        messages = [r.getMessage() for r in logged.records]
+    finally:
+        shim_log.setLevel(old_level)
+    if not any("Codex reply for handoff_x: Starting on it." in m for m in messages):
+        fail(f"delegation.context.append not logged: {messages}")
+    if not any("Codex reply for handoff_y: (no text)" in m for m in messages):
+        fail("delegation.context.append with a string content not handled")
+    if not any("session context (speakable) ignored" in m for m in messages):
+        fail("session.context.append not logged")
+    if not any("Codex closed the session" in m for m in messages):
+        fail("session.close not handled")
+    if not s.flux.fed:
+        fail("input_audio.append reached no Flux audio")
+    if any(r.levelno >= logging.ERROR and "boom" not in r.getMessage() for r in logged.records):
+        fail("unexpected ERROR records")
+    return ok
+
+
 async def main() -> int:
     results = {
         "prefix": check_prefix(),
@@ -612,6 +730,7 @@ async def main() -> int:
         "bad-messages": await check_bad_messages(),
         "close-paths": await check_close_paths(),
         "registry": await check_registry(),
+        "v3-events": await check_v3_events(),
     }
     for name, ok in results.items():
         print(f"[{name}] {'PASS' if ok else 'FAIL'}")

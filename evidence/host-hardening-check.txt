@@ -4,9 +4,9 @@ WARNING:shim:rejected GET /v1/realtime from non-local Origin
 WARNING:shim:rejected GET /v1/realtime from non-local Origin
 WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
 WARNING:shim:call request rejected: sdp must be a string starting with v=0
-WARNING:shim:[rtc_e9cbb43c8f2178bbc39b4719] no sideband after 2s; dropping the call
-WARNING:shim:[sess_def40097737586df] audio before session.update ignored
-WARNING:shim:[sess_def40097737586df] no session.update after 1s; closing the sideband
+WARNING:shim:[rtc_5bc96b56cc8af0a0ad99bb0d] no sideband after 2s; dropping the call
+WARNING:shim:[sess_bdfd9c609167ed78] audio before session.update ignored
+WARNING:shim:[sess_bdfd9c609167ed78] no session.update after 1s; closing the sideband
 WARNING:shim:call request rejected: call request must be a JSON object
 WARNING:shim:call request rejected: call request is not valid JSON
 WARNING:shim:call request rejected: call request JSON is nested too deep
@@ -39,39 +39,42 @@ WARNING:shim:call request rejected: sdp is not valid text
 WARNING:shim:call request rejected: ICE candidate port out of range
 WARNING:shim:call request rejected: ICE candidate port out of range
 WARNING:shim:call request rejected: client disconnected mid-body
-WARNING:shim:[rtc_02a2556acad447d630079adc] no sideband after 0s; dropping the call
-WARNING:shim:[rtc_063504bf292e78b882710c12] no sideband after 0s; dropping the call
-WARNING:shim:[rtc_bd9447bfdc5d28f21eda1956] no sideband after 0s; dropping the call
-WARNING:shim:[rtc_6f08c01ee960e471c88b058d] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_20a91ca43f7e2a04f4cda3bf] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_9795d6f163a25cd2428f96e8] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_2d3a81b8fdec32d195904a46] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_fb90e72e0766a50bc6048a4e] no sideband after 0s; dropping the call
 WARNING:shim:aioice STUN retry fired after its transport closed (AttributeError); not an error
-WARNING:shim:[sess_3a274423adc0caa1] non-JSON text frame from Codex
+WARNING:shim:[sess_cb3b2d8416fdde82] non-JSON text frame from Codex
 WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
 WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
 WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
-WARNING:shim:[rtc_984726a0c66702f146ffa338] no sideband after 2s; dropping the call
+WARNING:shim:[rtc_3eeb879c24d8be17c19acea4] no sideband after 2s; dropping the call
 WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
-WARNING:shim:[sess_119058804104d537] WebSocket handshake failed (ConnectionResetError)
-WARNING:shim:[rtc_877a795e726e20dc953b69a3] WebSocket handshake failed (ConnectionResetError)
-WARNING:shim:[sess_435fdaf88c832f65] WebSocket handshake failed (OSError)
-WARNING:shim:[rtc_0671c9744b02765898f2a318] WebSocket handshake failed (OSError)
-ERROR:shim:[sess_ffdaf5d9ca6b6b02] WebSocket handshake failed inside the shim
+WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
+WARNING:shim:sideband for unknown or expired call id
+WARNING:shim:[rtc_ce3a5376b041835917618c49] second sideband for the same call refused
+WARNING:shim:[sess_c46eb7ab35da54fe] WebSocket handshake failed (ConnectionResetError)
+WARNING:shim:[rtc_83be20a418efc85e62c9ee7b] WebSocket handshake failed (ConnectionResetError)
+WARNING:shim:[sess_8eb954fbfe5e6543] WebSocket handshake failed (OSError)
+WARNING:shim:[rtc_a1e9fcfb24b2d410c4b281f0] WebSocket handshake failed (OSError)
+ERROR:shim:[sess_95b4883696c98fb1] WebSocket handshake failed inside the shim
 Traceback (most recent call last):
-  File "/Users/coreyweathers/code/codex-deepgram-voice/shim/server.py", line 797, in realtime_ws
+  File "./shim/server.py", line 882, in realtime_ws
     await ws.prepare(request)
-  File "/Users/coreyweathers/code/codex-deepgram-voice/tests/hardening_check.py", line 668, in failing_prepare
+  File "./tests/hardening_check.py", line 725, in failing_prepare
     raise make_exc()  # a fresh exception per attempt, so each traceback is separate
     ^^^^^^^^^^^^^^^^
 TypeError: boom
-ERROR:shim:[rtc_5ab5cd2f171312fda6844b31] WebSocket handshake failed inside the shim
+ERROR:shim:[rtc_7df394ec25ed8625d5af1b29] WebSocket handshake failed inside the shim
 Traceback (most recent call last):
-  File "/Users/coreyweathers/code/codex-deepgram-voice/shim/server.py", line 797, in realtime_ws
+  File "./shim/server.py", line 882, in realtime_ws
     await ws.prepare(request)
-  File "/Users/coreyweathers/code/codex-deepgram-voice/tests/hardening_check.py", line 668, in failing_prepare
+  File "./tests/hardening_check.py", line 725, in failing_prepare
     raise make_exc()  # a fresh exception per attempt, so each traceback is separate
     ^^^^^^^^^^^^^^^^
 TypeError: boom
-WARNING:shim:[sess_7a6111749d385bfc] WebSocket handshake failed (OSError)
-WARNING:shim:[rtc_88be76d2188c3cd6e17a70af] WebSocket handshake failed (OSError)
+WARNING:shim:[sess_5eb27574c1bc5566] WebSocket handshake failed (OSError)
+WARNING:shim:[rtc_11989e13d4f0727e5407b93e] WebSocket handshake failed (OSError)
 [missing-key]
   exit code 1, stderr: 'error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the shim again.'
   -> PASS
@@ -87,7 +90,7 @@ WARNING:shim:[rtc_88be76d2188c3cd6e17a70af] WebSocket handshake failed (OSError)
   POST Origin=None                             -> 400 (want 400)
   -> PASS
 [orphan]
-  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_e9cbb43c8f2178bbc39b4719
+  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_5bc96b56cc8af0a0ad99bb0d
   sessions right after the call: 1, after 2.5s: 0
   -> PASS
 [bad-key]
@@ -168,6 +171,15 @@ WARNING:shim:[rtc_88be76d2188c3cd6e17a70af] WebSocket handshake failed (OSError)
   sessions right after it: 1 (want 1, not closed early)        ok
   sessions after the orphan window: 0 (want 0)                 ok
   plain GET with an unknown call_id -> 400 (want 400)          ok
+  create v3 call -> 201 (want 201)                             ok
+  v3 Location /v1/live/... (want /v1/live/rtc_...)             ok
+  plain GET /v1/live/<id> -> 400 (want 400)                    ok
+  sessions after it: 1 (want 1)                                ok
+  WebSocket to /v1/live/rtc_unknown -> 404 (want 404)          ok
+  v3 sideband first event: session.started (want session.started) ok
+  second v3 sideband -> 409 (want 409)                         ok
+  v3 sideband open 3 s after attach, sending nothing: True     ok
+  sessions after the v3 sideband closes: 0 (want 0)            ok
   standalone WebSocket, ConnectionResetError -> 400 (want 400) ok
   sessions after it: 0 (want 0)                                ok
     ERROR records for it: 0 (want 0)                           ok

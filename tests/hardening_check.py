@@ -89,6 +89,12 @@
                  ERROR "WebSocket handshake failed inside the shim" per attempt, which the
                  server-error count then excludes. OSError("late") raised after the real
                  prepare() sent the 101 expects a CLOSE with code 1011 and no server error.
+                 Realtime v3 (/live): a v3 call gets `Location: /v1/live/rtc_...`; a plain GET to
+                 /v1/live/<call_id> gets the same 400 before any lookup and leaves the call in
+                 place; an unknown call id over a real WebSocket gets 404; a v3 sideband that
+                 attaches and sends nothing receives session.started first and is still open
+                 3 s later, past a 1 s session.update deadline; a second v3 sideband for the
+                 same call gets 409.
 
 Usage:
   python tests/hardening_check.py [--key FAKE_KEY_SENTINEL] [--only origin ...]
@@ -574,7 +580,9 @@ async def wait_sessions(http: aiohttp.ClientSession, base: str, want: int, deadl
 
 
 async def check_bad_upgrade(orphan_s: float = 1.5) -> bool:
-    runner, base = await start_in_process(Settings(orphan_call_timeout_s=orphan_s))
+    # The 1 s session.update deadline only matters to the v3 step, which must not hit it.
+    runner, base = await start_in_process(Settings(orphan_call_timeout_s=orphan_s,
+                                                   session_update_timeout_s=1.0))
     rt = f"{base}/v1/realtime"
     ws_rt = "ws" + rt[len("http"):]
     ok = True
@@ -654,6 +662,55 @@ async def check_bad_upgrade(orphan_s: float = 1.5) -> bool:
             # 4. an unknown call_id without the upgrade gets the same 400
             status = await plain_get(http, {"call_id": "rtc_unknown"})
             step(f"plain GET with an unknown call_id -> {status} (want 400)", status == 400)
+
+            # 4b. realtime v3: POST /v1/live, sideband at /v1/live/<call_id>, no session.update
+            async with http.post(f"{base}/v1/live", data=MINIMAL_OFFER,
+                                 headers={"Content-Type": "application/sdp"}) as resp:
+                location = resp.headers.get("Location", "")
+                step(f"create v3 call -> {resp.status} (want 201)", resp.status == 201)
+                step(f"v3 Location {location.rsplit('/', 1)[0]}/... (want /v1/live/rtc_...)",
+                     location.startswith("/v1/live/rtc_"))
+            v3_id = location.rsplit("/", 1)[-1]
+            live = f"{base}/v1/live/{v3_id}"
+            async with http.get(live) as resp:
+                text = (await resp.text()).strip()
+                step(f"plain GET /v1/live/<id> -> {resp.status} (want 400)",
+                     resp.status == 400 and text == "request is not a WebSocket upgrade")
+            n = await session_count(http, base)
+            step(f"sessions after it: {n} (want 1)", n == 1)
+            try:
+                async with http.ws_connect("ws" + f"{base}/v1/live/rtc_unknown"[len("http"):]):
+                    status = 101
+            except aiohttp.WSServerHandshakeError as exc:
+                status = exc.status
+            step(f"WebSocket to /v1/live/rtc_unknown -> {status} (want 404)", status == 404)
+            first = None
+            try:
+                async with http.ws_connect("ws" + live[len("http"):],
+                                           headers={"openai-alpha": "quicksilver=v2"}) as ws:
+                    msg = await asyncio.wait_for(ws.receive(), timeout=5.0)
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        first = json.loads(msg.data)
+                    step(f"v3 sideband first event: {first and first.get('type')} (want session.started)",
+                         bool(first) and first.get("type") == "session.started"
+                         and isinstance(first.get("session", {}).get("id"), str))
+                    try:
+                        async with http.ws_connect("ws" + live[len("http"):]):
+                            second = 101
+                    except aiohttp.WSServerHandshakeError as exc:
+                        second = exc.status
+                    step(f"second v3 sideband -> {second} (want 409)", second == 409)
+                    try:
+                        extra = await asyncio.wait_for(ws.receive(), timeout=3.0)
+                        still_open = False
+                        print(f"  v3 sideband got {extra.type.name} {ws.close_code} within 3 s")
+                    except asyncio.TimeoutError:
+                        still_open = not ws.closed
+                    step(f"v3 sideband open 3 s after attach, sending nothing: {still_open}", still_open)
+            except aiohttp.WSServerHandshakeError as exc:
+                step(f"v3 sideband handshake -> {exc.status} (want 101)", False)
+            n = await wait_sessions(http, base, 0)
+            step(f"sessions after the v3 sideband closes: {n} (want 0)", n == 0)
 
             # 5. a handshake failure injected by patching prepare() releases the session.
             #    OSError or ConnectionResetError before the 101: 400.
