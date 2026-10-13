@@ -1,0 +1,51 @@
+$ docker compose run --rm e2e
+ Container codex-deepgram-voice-e2e-run-176b6a26dd40 Creating
+ Container codex-deepgram-voice-e2e-run-176b6a26dd40 Created
+2026-10-09 23:22:58,158 INFO fake-codex shim started in-process at http://127.0.0.1:35363/v1
+2026-10-09 23:22:58,192 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] call created (session type quicksilver, query {'intent': 'quicksilver', 'architecture': 'avas'})
+2026-10-09 23:22:58,193 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] WebRTC audio track received
+2026-10-09 23:22:58,194 INFO aiohttp.access 127.0.0.1 [09/Oct/2026:23:22:58 +0000] "POST /v1/realtime/calls?intent=quicksilver&architecture=avas HTTP/1.1" 201 2257 "-" "Python/3.12 aiohttp/3.14.4"
+2026-10-09 23:22:58,194 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] WebRTC connection state: connecting
+POST http://127.0.0.1:35363/v1/realtime/calls?intent=quicksilver&architecture=avas -> 201, Location: /v1/realtime/calls/rtc_5d9d6911ec5aa09039a2fd3a, answer 2048 bytes
+2026-10-09 23:22:58,195 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] sideband WebSocket attached
+sideband connected: ws://127.0.0.1:35363/v1/realtime?call_id=rtc_5d9d6911ec5aa09039a2fd3a&intent=quicksilver
+2026-10-09 23:22:58,195 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] session.update type=quicksilver -> dialect v1
+[  0.04s] session.updated id=sess_0a667b02bf3ead1f
+2026-10-09 23:22:58,228 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] WebRTC connection state: connected
+2026-10-09 23:22:58,234 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] data channel 'oai-events' opened by Codex
+2026-10-09 23:22:58,312 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] first audio frame: 48000 Hz, stereo, 960 samples
+2026-10-09 23:22:58,314 INFO flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+2026-10-09 23:22:58,471 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
+2026-10-09 23:22:58,471 INFO flux Flux connected
+2026-10-09 23:22:58,847 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] turn 0 StartOfTurn
+[  1.17s] input_transcript.delta #1: 'Yeah. Is'
+[  1.89s] input_transcript.delta #2: ' As as much as'
+[  2.61s] input_transcript.delta #3: ','
+[  2.85s] input_transcript.delta #4: ' um,'
+[  3.09s] input_transcript.delta #5: " it's worth"
+[  6.21s] input_transcript.delta #10: ' uh,'
+[ 10.78s] input_transcript.delta #20: ' are'
+[ 15.09s] input_transcript.delta #30: ' if'
+[ 18.69s] input_transcript.delta #40: ' women who'
+[ 22.05s] input_transcript.delta #50: ' qualified'
+[ 25.65s] input_transcript.delta #60: ' have'
+2026-10-09 23:23:24,297 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] turn 0 EndOfTurn conf=0.910 -> Codex: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I thi...
+[ 26.14s] input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 26.14s] handoff.requested id=handoff_88fc827e5096 input_transcript="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+2026-10-09 23:23:24,298 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] Codex reply for handoff_88fc827e5096: Starting on it.
+done waiting
+2026-10-09 23:23:30,313 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] Codex closed the session
+2026-10-09 23:23:30,314 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] sideband WebSocket closed
+2026-10-09 23:23:30,322 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] audio track ended after 1442 frames
+2026-10-09 23:23:30,323 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] WebRTC connection state: closed
+2026-10-09 23:23:30,394 INFO shim [rtc_5d9d6911ec5aa09039a2fd3a] session closed after 32s, 1 handoff(s)
+2026-10-09 23:23:30,395 INFO aiohttp.access 127.0.0.1 [09/Oct/2026:23:22:58 +0000] "GET /v1/realtime?call_id=rtc_5d9d6911ec5aa09039a2fd3a&intent=quicksilver HTTP/1.1" 101 0 "-" "Python/3.12 aiohttp/3.14.4"
+
+summary:
+  session.updated received: True
+  live caption deltas:      61
+  turn_marked events:       1
+  handoff.requested events: 1
+    -> Codex would start on: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I think many of us are looking forward to it just being normal. And, um, I think if it signifies anything, it is, uh, to honor the the women who came before us who, um, were skilled and qualified, um, and didn't get, uh, the same opportunities that we have today.
+RESULT: PASS
+exit=0

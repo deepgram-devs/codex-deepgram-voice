@@ -1,0 +1,64 @@
+# One service at a time. DEEPGRAM_API_KEY is read from your shell, never stored here.
+#   DEEPGRAM_API_KEY=... docker compose run --rm flux-check
+#   DEEPGRAM_API_KEY=... docker compose run --rm e2e
+#   DEEPGRAM_API_KEY=... docker compose up shim      (the shim in a container; see README, "Run the shim in Docker")
+#   docker compose run --rm hardening-check
+#   docker compose run --rm unit-check
+services:
+  shim:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    ports:
+      - "127.0.0.1:8765:8765"  # The image CMD passes --allow-unauthenticated-remote because the container
+                               # has to bind 0.0.0.0. The compose port mapping on 127.0.0.1 is what keeps
+                               # it off your network.
+
+  flux-check:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/wav_to_flux.py", "audio/spacewalk-16k.wav", "--realtime", "--eot", "0.8", "--timeout-ms", "6000"]
+
+  e2e:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/e2e_fake_codex.py", "audio/spacewalk-16k.wav"]
+
+  ws-check-v1:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v1"]
+
+  ws-check-v2:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v2"]
+
+  # v2 conversational session (session.type "realtime"): expects the background_agent handoff.
+  ws-check-v2-handoff:
+    build: .
+    image: codex-flux-voice
+    environment:
+      - DEEPGRAM_API_KEY
+    command: ["python", "tests/ws_transport_check.py", "audio/spacewalk-16k.wav", "--dialect", "v2", "--session-type", "realtime"]
+
+  # No key and no network: the eleven offline session-logic checks listed in the README table.
+  unit-check:
+    build: .
+    image: codex-flux-voice
+    command: ["python", "tests/unit_check.py"]
+
+  # No real key needed: uses a fake key against live Flux and checks it never reaches the logs.
+  hardening-check:
+    build: .
+    image: codex-flux-voice
+    command: ["python", "tests/hardening_check.py"]
