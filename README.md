@@ -4,7 +4,7 @@ A small local shim that makes [Deepgram Flux](https://developers.deepgram.com/do
 
 No Codex fork and no patched binary. Codex lets you point its two realtime voice endpoints at another server. The shim listens on localhost, speaks Codex's realtime protocol, and runs Flux underneath.
 
-This is an unofficial community shim, not affiliated with or endorsed by OpenAI. The two Codex settings it relies on are marked experimental by OpenAI and may change in a future Codex release. No spoken session with a real microphone and the Codex TUI has been recorded yet; the checks in this repo drive the shim with a fake Codex client, plus one headless run of the real Codex 0.162.1 TUI that stops at the open Flux stream (see [What has been verified](#what-has-been-verified)).
+This is an unofficial community shim, not affiliated with or endorsed by OpenAI. The two Codex settings it relies on are marked experimental by OpenAI and may change in a future Codex release. A spoken session with a real microphone and the Codex 0.162.1 TUI is recorded under `evidence/`, alongside the checks that drive the shim with a fake Codex client (see [What has been verified](#what-has-been-verified)).
 
 ```
 Codex CLI (F8) --WebRTC audio--> shim on 127.0.0.1:8765 --16 kHz PCM--> Deepgram Flux
@@ -248,8 +248,9 @@ Every check under `tests/` was run in Docker and in a host venv, with its trimme
 - `ws_transport_check.py` in the v1 shape, the v2 transcription shape, the v2 realtime shape that hands off through a `background_agent` function call, and the v3 shape on `/v1/live` (`--dialect v3`, `evidence/host-ws-transport-v3.txt` and `evidence/docker-ws-transport-v3.txt`): `session.started` first, `input_transcript.added` captions, one `turn.done` and one `delegation.created` carrying the same transcript, an `input_audio.append` sent before `session.update` ignored, and the socket closed after `session.close`.
 - `hardening_check.py` (ten checks) and `unit_check.py` (fourteen checks), as listed under the table above.
 - The real Codex CLI 0.162.1 TUI against the shim, driven headlessly with `/voice` and no speech (host venv, `evidence/host-codex-0.162.1-headless.txt`): the v3 call, the sideband, `data channel 'oai-events' opened by Codex`, microphone frames arriving, and the Flux stream opening, with the session staying up until the TUI was closed.
+- A spoken session with a real microphone and the Codex CLI 0.162.1 TUI on macOS (host venv, `evidence/host-codex-0.162.1-mic-session.txt`, with `-v` so every Flux `Update` and its end-of-turn confidence is in the log): three utterances in 37 s, each ending in `EndOfTurn` at confidence 0.821, 0.834, and 0.805 against the 0.8 threshold and handed to Codex, the last one `Create a file called hello dot t x t that says hello from Flux.`, which Codex carried out (it wrote `hello.txt`). While words were still arriving the confidence stayed below 0.25; it climbed past 0.8 only after each sentence was complete, and in the gap before the last word of the third turn it rose to 0.70 without ending the turn. Codex's spoken-reply context (`session.context.append`) arrived after the first two turns.
 
-Not yet recorded: a session with a real microphone, the Codex TUI, and speech. The headless checks drive the shim with a fake Codex client built from the same source citations, and the headless TUI run above stops at the open stream. The log sequence in [step 3](#3-talk) is what the spoken session should produce, and the 10-minute test above is the matching check for turn detection.
+Not yet recorded: the 10-minute turn-detection exercise above; the spoken session covers three short turns.
 
 ## Privacy and keys
 
