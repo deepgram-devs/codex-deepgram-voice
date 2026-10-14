@@ -129,6 +129,11 @@ def session_type_of(session: dict) -> str:
     return stype if isinstance(stype, str) and stype else "quicksilver"
 
 
+def offer_allows_either_dtls_role(desc: SessionDescription) -> bool:
+    """True when every media line of the offer says `a=setup:actpass` (aiortc role "auto")."""
+    return bool(desc.media) and all(m.dtls is not None and m.dtls.role == "auto" for m in desc.media)
+
+
 def is_live(path: str) -> bool:
     """The v3 endpoint (`{prefix}/live`, realtime_call.rs:66-75), trailing slash already stripped."""
     return path == "/live" or path.endswith("/live")
@@ -286,7 +291,8 @@ class VoiceSession:
         resampler, self._rtc_resampler = self._rtc_resampler, self._fresh()
         await self._drain(resampler)
 
-    async def start_webrtc(self, offer_sdp: str) -> str:
+    async def start_webrtc(self, offer_sdp: str, dtls_server: bool = False) -> str:
+        """Answer the offer; with `dtls_server`, answer `a=setup:passive` (see the comment below)."""
         pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
         self.pc = pc
 
@@ -307,6 +313,26 @@ class VoiceSession:
                 await self.close()
 
         await pc.setRemoteDescription(RTCSessionDescription(sdp=offer_sdp, type="offer"))
+        if dtls_server:
+            # Codex's voice helper (webrtc 0.20, the Rust stack) opens the SCTP association for
+            # its "oai-events" data channel only when it is the DTLS client, and aiortc opens it
+            # only when it is the ICE controlling side (rtcsctptransport.py is_server), which an
+            # answerer never is. aiortc's default answer is `a=setup:active`, so both sides wait
+            # for the other's INIT, the channel never opens, and the Codex 0.162 TUI gives up
+            # after about 15 s, observed ("Voice connection timed out"). Answer `a=setup:passive`
+            # instead: Codex becomes the DTLS client and sends the INIT. The caller passes
+            # dtls_server only when the offer said `actpass`; an offer that fixed its own role
+            # already fixed ours. `_set_role` is aiortc-private (present in 1.11 through 1.15,
+            # the pinned range); if a later release drops it, answer as before and say so,
+            # rather than failing the call with a message that blames the offer.
+            try:
+                for transceiver in pc.getTransceivers():
+                    transceiver.receiver.transport._set_role("server")
+                if pc.sctp is not None:
+                    pc.sctp.transport._set_role("server")
+            except AttributeError:
+                log.warning("[%s] this aiortc has no DTLS role override; answering a=setup:active, "
+                            "so Codex 0.162's data channel may not open", self.tag)
         answer = await pc.createAnswer()
         await pc.setLocalDescription(answer)
         return pc.localDescription.sdp
@@ -819,7 +845,8 @@ def build_app(settings: Settings) -> web.Application:
             log.info("[%s] call created (session type %s, query %s)", call_id, session.session_type,
                      dict(request.query) or "{}")
         try:
-            answer = (await session.start_webrtc(sdp)).encode()
+            answer = (await session.start_webrtc(
+                sdp, dtls_server=offer_allows_either_dtls_role(desc))).encode()
         except asyncio.CancelledError:
             await session.close()  # cancelled at shutdown: release the session, then propagate
             raise

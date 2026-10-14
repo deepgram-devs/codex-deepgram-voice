@@ -126,9 +126,29 @@ What the shim does with it:
 - Limitation: when Flux revises a word the shim already sent as a caption, v3 Codex keeps the stale caption, because `turn.done` replaces it only when the final starts with it (`methods.rs:798-805`), and `delegation.created` then adds the exact final as a second user entry (`methods.rs:814-824`); the text Codex acts on is still exact, but the transcript shows both.
 - `delegation.context.append` is logged as Codex's reply, `session.context.append` is logged and ignored, and `session.close` ends the session. `GET {prefix}/live` without a call id is the plain WebSocket transport in the v3 shape: `session.update` gets `session.started`, and `input_audio.append` (base64 PCM16 at 24 kHz) is fed to Flux like v1's `input_audio_buffer.append`.
 
+## DTLS role in the SDP answer (Codex 0.162 data channel)
+
+Found on 2026-10-14 in the first real Codex 0.162.1 session against the shim: the TUI showed `Voice connection timed out. Retrying once after cleanup.` about 15 s after `/voice`, twice, while the shim logged `WebRTC connection state: connected`, no `data channel` line, and `audio track ended after 0 frames`. Reproduced headlessly with the same TUI.
+
+What Codex waits for:
+
+| Fact | Source |
+| --- | --- |
+| The TUI's WebRTC helper (`codex-voice-host`, built on the Rust `webrtc` crate 0.20) creates a data channel named `oai-events`, and `apply_answer` returns only when that channel has opened; a `TransportTimedOut` reply becomes `ConnectionError::NegotiationTimedOut` | `realtime-webrtc/src/client.rs:139-156` at `rust-v0.162.1`; the channel label and crate version are strings in the helper binary |
+| `NegotiationTimedOut` during startup prints the message above and retries once | `tui/src/chatwidget/realtime.rs:466-487` |
+| The helper sends no audio until the transport is ready, so a stuck channel also means zero audio frames at the shim | observed: `audio track ended after 0 frames` on every timed-out call |
+
+Why the channel never opened:
+
+- aiortc's SCTP side sends the association `INIT` only when it is the ICE controlling agent (`aiortc/rtcsctptransport.py:703-704`, `is_server` is "not controlling"). The shim answers the offer, so it is the controlled agent and waits for the peer's `INIT`.
+- The Rust helper's SCTP side sends `INIT` only when it is the DTLS client. aiortc's default answer says `a=setup:active` (`aiortc/rtcpeerconnection.py:590-593`), which makes the shim the DTLS client and the helper the DTLS server, so the helper waits too. Observed with the shim's SCTP logging on: ICE completes, the DTLS handshake completes, and no SCTP chunk is ever sent or received by either side.
+- An aiortc caller does not hit this because, as the offerer, it is ICE controlling and sends `INIT` whatever its DTLS role is. That is why `e2e_fake_codex.py` passed while the real TUI timed out.
+
+What the shim does now: when every media line of the offer says `a=setup:actpass` (what Codex sends), the shim takes the DTLS server role before creating its answer, so the answer says `a=setup:passive`, the helper becomes the DTLS client, and it sends `INIT`. An offer that already fixed its role (`active` or `passive`) is answered with the complementary role as before. Observed after the change, headless Codex 0.162.1 (`evidence/host-codex-0.162.1-headless.txt`): `data channel 'oai-events' opened by Codex` 0.3 s after `connected`, then `first audio frame`, then `Flux STT stream opened`, and the session stayed up until the TUI was closed. Pinned by the `dtls-role` unit check.
+
 ## Testing limits
 
-The headless checks run without an OpenAI login or a microphone, so the real TUI-to-shim run is not part of the recorded evidence. The shim's WebRTC and sideband behavior was exercised headlessly with a fake Codex client built from the same source citations, inside Docker and in a host venv, against the live Flux API; the README lists what each check covers and the trimmed output is under `evidence/`. The auth headers Codex sends to the shim (ChatGPT bearer token, account id, attestation) are never logged or stored; the shim ignores them.
+The headless checks run without an OpenAI login or a microphone. The real Codex 0.162.1 TUI was run against the shim headlessly, without speech, far enough to open its data channel, deliver microphone frames, and open the Flux stream (`evidence/host-codex-0.162.1-headless.txt`); a spoken session with turns and handoffs is not part of the recorded evidence yet. The shim's WebRTC and sideband behavior was exercised headlessly with a fake Codex client built from the same source citations, inside Docker and in a host venv, against the live Flux API; the README lists what each check covers and the trimmed output is under `evidence/`. The auth headers Codex sends to the shim (ChatGPT bearer token, account id, attestation) are never logged or stored; the shim ignores them.
 
 ## Flux turn-detection settings
 

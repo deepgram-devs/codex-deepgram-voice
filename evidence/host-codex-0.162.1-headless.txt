@@ -1,0 +1,17 @@
+$ python -m shim.server --port 8766 -v   # then, in another terminal: codex -c experimental_realtime_webrtc_call_base_url="http://127.0.0.1:8766/v1" -c experimental_realtime_ws_base_url="ws://127.0.0.1:8766/v1" (Codex CLI 0.162.1, /voice, headless pty, no speech; DEBUG caption lines trimmed)
+2026-10-14 10:20:46,544 INFO shim Codex voice shim listening on http://127.0.0.1:8766  (calls: /v1/realtime/calls and /v1/live, sideband: /v1/realtime and /v1/live/<call_id>)
+2026-10-14 10:20:46,544 INFO shim Codex config: experimental_realtime_webrtc_call_base_url = "http://127.0.0.1:8766/v1", experimental_realtime_ws_base_url = "ws://127.0.0.1:8766/v1"
+2026-10-14 10:21:10,601 INFO shim [rtc_6274d8f4401daa9712f66c85] call created (dialect v3, query {})
+2026-10-14 10:21:10,609 INFO shim [rtc_6274d8f4401daa9712f66c85] WebRTC audio track received
+2026-10-14 10:21:10,612 INFO shim [rtc_6274d8f4401daa9712f66c85] WebRTC connection state: connecting
+2026-10-14 10:21:10,612 INFO shim [rtc_6274d8f4401daa9712f66c85] sideband WebSocket attached (dialect v3); sending session.started
+2026-10-14 10:21:11,126 INFO shim [rtc_6274d8f4401daa9712f66c85] WebRTC connection state: connected
+2026-10-14 10:21:11,464 INFO shim [rtc_6274d8f4401daa9712f66c85] data channel 'oai-events' opened by Codex
+2026-10-14 10:21:11,841 INFO shim [rtc_6274d8f4401daa9712f66c85] first audio frame: 48000 Hz, stereo, 960 samples
+2026-10-14 10:21:11,842 INFO flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+2026-10-14 10:21:12,362 INFO shim [rtc_6274d8f4401daa9712f66c85] Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
+2026-10-14 10:21:12,364 INFO flux Flux connected
+2026-10-14 10:21:38,485 INFO shim [rtc_6274d8f4401daa9712f66c85] sideband WebSocket closed
+2026-10-14 10:21:38,644 INFO shim [rtc_6274d8f4401daa9712f66c85] audio track ended after 1333 frames
+2026-10-14 10:21:38,644 INFO shim [rtc_6274d8f4401daa9712f66c85] WebRTC connection state: closed
+2026-10-14 10:21:38,644 INFO shim [rtc_6274d8f4401daa9712f66c85] session closed after 28s, 0 handoff(s)

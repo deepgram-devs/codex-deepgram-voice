@@ -1,6 +1,6 @@
 $ docker compose run --rm hardening-check
- Container codex-deepgram-voice-hardening-check-run-e46c8a0ada4b Creating
- Container codex-deepgram-voice-hardening-check-run-e46c8a0ada4b Created
+ Container codex-deepgram-voice-hardening-check-run-06569ec58958 Creating
+ Container codex-deepgram-voice-hardening-check-run-06569ec58958 Created
 [missing-key]
   exit code 1, stderr: 'error: DEEPGRAM_API_KEY is not set. Export your Deepgram API key and start the shim again.'
   -> PASS
@@ -12,17 +12,17 @@ $ docker compose run --rm hardening-check
 WARNING:shim:rejected GET /v1/realtime from non-local Origin
   WS   Origin='https://evil.example'           -> 403 (want 403)
 WARNING:shim:rejected GET /v1/realtime from non-local Origin
-WARNING:shim:rejected GET /v1/realtime from non-local Origin
-WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
   WS   Origin='http://localhost.evil.example'  -> 403 (want 403)
+WARNING:shim:rejected GET /v1/realtime from non-local Origin
   WS   Origin='null'                           -> 403 (want 403)
+WARNING:shim:rejected POST /v1/realtime/calls from non-local Origin
   POST Origin='https://evil.example'           -> 403 (want 403)
-  POST Origin=None                             -> 400 (want 400)
 WARNING:shim:call request rejected: sdp must be a string starting with v=0
+  POST Origin=None                             -> 400 (want 400)
   -> PASS
 [orphan]
-  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_f2a70f170298e4b8191c64b3
-WARNING:shim:[rtc_f2a70f170298e4b8191c64b3] no sideband after 2s; dropping the call
+  POST /v1/realtime/calls -> 201, Location /v1/realtime/calls/rtc_3b7a1a59b864a354d3cbbb70
+WARNING:shim:[rtc_3b7a1a59b864a354d3cbbb70] no sideband after 2s; dropping the call
   sessions right after the call: 1, after 2.5s: 0
   -> PASS
 [bad-key]
@@ -38,8 +38,8 @@ WARNING:shim:[rtc_f2a70f170298e4b8191c64b3] no sideband after 2s; dropping the c
   Flux rejected the key before the sideband attached: True
   -> PASS
 [no-session-update]
-WARNING:shim:[sess_2067f31e1aff92f1] audio before session.update ignored
-WARNING:shim:[sess_2067f31e1aff92f1] no session.update after 1s; closing the sideband
+WARNING:shim:[sess_6b8656fcb215d1b5] audio before session.update ignored
+WARNING:shim:[sess_6b8656fcb215d1b5] no session.update after 1s; closing the sideband
   sessions while streaming: 1, Flux opened: False, frames received: [], close code: 1008, sessions after: 0
   -> PASS
 [remote-bind]
@@ -59,12 +59,12 @@ WARNING:shim:call request rejected: sdp must be a string starting with v=0
   non-string sdp               -> 400 'sdp must be a string starting with v=0' (want 400 'sdp must be a string starting with v=0')
 WARNING:shim:call request rejected: call request body is not valid text for its charset
   bad UTF-8 as JSON            -> 400 'call request body is not valid text for its charset' (want 400 'call request body is not valid text for its charset')
-  bad UTF-8 as SDP             -> 400 'call request body is not valid text for its charset' (want 400 'call request body is not valid text for its charset')
 WARNING:shim:call request rejected: call request body is not valid text for its charset
+  bad UTF-8 as SDP             -> 400 'call request body is not valid text for its charset' (want 400 'call request body is not valid text for its charset')
 WARNING:shim:call request rejected: session must be a JSON object
   multipart string session     -> 400 'session must be a JSON object' (want 400 'session must be a JSON object')
-  multipart non-JSON session   -> 400 'call request is not valid JSON' (want 400 'call request is not valid JSON')
 WARNING:shim:call request rejected: call request is not valid JSON
+  multipart non-JSON session   -> 400 'call request is not valid JSON' (want 400 'call request is not valid JSON')
 WARNING:shim:call request rejected: unknown charset in Content-Type
   multipart unknown charset    -> 400 'unknown charset in Content-Type' (want 400 'unknown charset in Content-Type')
 WARNING:shim:call request rejected: unknown Content-Transfer-Encoding in a multipart part
@@ -91,22 +91,22 @@ WARNING:shim:call request rejected: call request is not valid JSON
   JSON, unknown encoding       -> 400 'call request is not valid JSON' (want 400 'call request is not valid JSON')
 WARNING:shim:call request rejected: SDP offer could not be parsed (KeyError)
   offer: bad setup line        -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
+WARNING:shim:call request rejected: SDP offer could not be parsed (AssertionError)
   offer: bare media line       -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
+WARNING:shim:call request rejected: SDP offer could not be parsed (AssertionError)
   offer: v=0 then a bare media line -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
-  offer: garbage after v=0     -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
-  offer: bad BUNDLE group      -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
-  offer: session-level mid     -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
-  offer: duplicate mid in section -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
-  offer: lone surrogate in mid -> 400 'sdp is not valid text' (want 400 'sdp is not valid text')
-  offer: ICE candidate on port 0 -> 400 'ICE candidate port out of range' (want 400 'ICE candidate port out of range')
-WARNING:shim:call request rejected: SDP offer could not be parsed (AssertionError)
-WARNING:shim:call request rejected: SDP offer could not be parsed (AssertionError)
 WARNING:shim:call request rejected: SDP offer could not be parsed (ValueError)
+  offer: garbage after v=0     -> 400 'SDP offer could not be parsed' (want 400 'SDP offer could not be parsed')
 WARNING:shim:call request rejected: BUNDLE group names a mid that no media line has
+  offer: bad BUNDLE group      -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
 WARNING:shim:call request rejected: BUNDLE group names a mid that no media line has
+  offer: session-level mid     -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
 WARNING:shim:call request rejected: BUNDLE group names a mid that no media line has
+  offer: duplicate mid in section -> 400 'BUNDLE group names a mid that no media line has' (want 400 'BUNDLE group names a mid that no media line has')
 WARNING:shim:call request rejected: sdp is not valid text
+  offer: lone surrogate in mid -> 400 'sdp is not valid text' (want 400 'sdp is not valid text')
 WARNING:shim:call request rejected: ICE candidate port out of range
+  offer: ICE candidate on port 0 -> 400 'ICE candidate port out of range' (want 400 'ICE candidate port out of range')
 WARNING:shim:call request rejected: ICE candidate port out of range
   offer: ICE candidate port 70000 -> 400 'ICE candidate port out of range' (want 400 'ICE candidate port out of range')
   chunked body over the size cap -> 413, server errors 0 (want 413 and 0)
@@ -118,16 +118,16 @@ WARNING:shim:call request rejected: client disconnected mid-body
   well-formed JSON call          -> 201 (want 201)
   well-formed gzip JSON call     -> 201 (want 201)
   multipart base64 sdp part      -> 201 (want 201)
-WARNING:shim:[rtc_993f659bfd55ab68f930dcb0] no sideband after 0s; dropping the call
-WARNING:shim:[rtc_09f1883fb28fd19408534a27] no sideband after 0s; dropping the call
-WARNING:shim:[rtc_104d2b7ea2f74c072a4c7f87] no sideband after 0s; dropping the call
-WARNING:shim:[rtc_fee962b952190569f04adabe] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_11367c74f4e9298af4ed8556] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_49558b67cd60cc363eae2a5c] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_1ef9c5f95a3830aa83b05645] no sideband after 0s; dropping the call
+WARNING:shim:[rtc_fb0e1f819597bc25afd8555a] no sideband after 0s; dropping the call
 WARNING:shim:aioice STUN retry fired after its transport closed (AttributeError); not an error
   offer: ICE candidate that never answers -> 201, sessions now 0, server errors 0, STUN retry warnings 1 (want 201, 0, 0, 1)
   server errors logged: 0 (want 0), sessions after the orphan window: 0
   -> PASS
 [bad-ws-frame]
-WARNING:shim:[sess_439b4146f8a33333] non-JSON text frame from Codex
+WARNING:shim:[sess_1b11befe5c455754] non-JSON text frame from Codex
   after a 100k-deep frame, session.update answered with: session.updated; server errors: 0
   -> PASS
 [bad-upgrade]
@@ -144,7 +144,7 @@ WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgr
 WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
   plain GET with a second call_id -> 400 (want 400)            ok
   sessions right after it: 1 (want 1, not closed early)        ok
-WARNING:shim:[rtc_4fe6d2a7b3617af4393a0461] no sideband after 2s; dropping the call
+WARNING:shim:[rtc_20fba7020ece0101e08669b8] no sideband after 2s; dropping the call
   sessions after the orphan window: 0 (want 0)                 ok
 WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgrade
   plain GET with an unknown call_id -> 400 (want 400)          ok
@@ -156,31 +156,31 @@ WARNING:shim:realtime endpoint request rejected: request is not a WebSocket upgr
 WARNING:shim:sideband for unknown or expired call id
   WebSocket to /v1/live/rtc_unknown -> 404 (want 404)          ok
   v3 sideband first event: session.started (want session.started) ok
-WARNING:shim:[rtc_2c75b893913a907a1071e853] second sideband for the same call refused
+WARNING:shim:[rtc_ece5645aa37adac9b4f676eb] second sideband for the same call refused
   second v3 sideband -> 409 (want 409)                         ok
   v3 sideband open 3 s after attach, sending nothing: True     ok
   sessions after the v3 sideband closes: 0 (want 0)            ok
-WARNING:shim:[sess_5766fe0a537d1b91] WebSocket handshake failed (ConnectionResetError)
+WARNING:shim:[sess_cbe117ed20c28ad5] WebSocket handshake failed (ConnectionResetError)
   standalone WebSocket, ConnectionResetError -> 400 (want 400) ok
   sessions after it: 0 (want 0)                                ok
     ERROR records for it: 0 (want 0)                           ok
   create call -> 201 (want 201)                                ok
-WARNING:shim:[rtc_82cf438438dffdbfaef4ce84] WebSocket handshake failed (ConnectionResetError)
+WARNING:shim:[rtc_26deb9cb11582845f7205502] WebSocket handshake failed (ConnectionResetError)
   call sideband, ConnectionResetError -> 400 (want 400)        ok
   sessions after it (call closed): 0 (want 0)                  ok
     ERROR records for it: 0 (want 0)                           ok
-WARNING:shim:[sess_9b86ec9e304f199d] WebSocket handshake failed (OSError)
+WARNING:shim:[sess_670a808f96f4c195] WebSocket handshake failed (OSError)
   standalone WebSocket, OSError -> 400 (want 400)              ok
   sessions after it: 0 (want 0)                                ok
     ERROR records for it: 0 (want 0)                           ok
   create call -> 201 (want 201)                                ok
-WARNING:shim:[rtc_036e14edcafc02b3affd4948] WebSocket handshake failed (OSError)
+WARNING:shim:[rtc_fec1498172e1b6dd0acc3ed1] WebSocket handshake failed (OSError)
   call sideband, OSError -> 400 (want 400)                     ok
   sessions after it (call closed): 0 (want 0)                  ok
     ERROR records for it: 0 (want 0)                           ok
-ERROR:shim:[sess_308a74ec349a0130] WebSocket handshake failed inside the shim
+ERROR:shim:[sess_25617c9f6103d941] WebSocket handshake failed inside the shim
 Traceback (most recent call last):
-  File "/app/shim/server.py", line 882, in realtime_ws
+  File "/app/shim/server.py", line 904, in realtime_ws
     await ws.prepare(request)
   File "/app/tests/hardening_check.py", line 725, in failing_prepare
     raise make_exc()  # a fresh exception per attempt, so each traceback is separate
@@ -191,9 +191,9 @@ TypeError: boom
     ERROR records for it: 1 on shim (want 1)                   ok
     with a traceback: 1 (want 1)                               ok
   create call -> 201 (want 201)                                ok
-ERROR:shim:[rtc_9b53290bc8597c226eb2f69e] WebSocket handshake failed inside the shim
+ERROR:shim:[rtc_e568a75ff1840933ab532f0f] WebSocket handshake failed inside the shim
 Traceback (most recent call last):
-  File "/app/shim/server.py", line 882, in realtime_ws
+  File "/app/shim/server.py", line 904, in realtime_ws
     await ws.prepare(request)
   File "/app/tests/hardening_check.py", line 725, in failing_prepare
     raise make_exc()  # a fresh exception per attempt, so each traceback is separate
@@ -203,12 +203,12 @@ TypeError: boom
   sessions after it (call closed): 0 (want 0)                  ok
     ERROR records for it: 1 on shim (want 1)                   ok
     with a traceback: 1 (want 1)                               ok
-WARNING:shim:[sess_19b0257646941409] WebSocket handshake failed (OSError)
+WARNING:shim:[sess_1654442671dd5cf5] WebSocket handshake failed (OSError)
   standalone WebSocket, OSError after the 101 -> CLOSE 1011 (want CLOSE 1011) ok
   sessions after it: 0 (want 0)                                ok
     ERROR records for it: 0 (want 0)                           ok
   create call -> 201 (want 201)                                ok
-WARNING:shim:[rtc_98971f1e2a4e2182bbb36897] WebSocket handshake failed (OSError)
+WARNING:shim:[rtc_9ef0919feaf9fc6f8a0c7583] WebSocket handshake failed (OSError)
   call sideband, OSError after the 101 -> CLOSE 1011 (want CLOSE 1011) ok
   sessions after it (call closed): 0 (want 0)                  ok
     ERROR records for it: 0 (want 0)                           ok

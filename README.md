@@ -4,7 +4,7 @@ A small local shim that makes [Deepgram Flux](https://developers.deepgram.com/do
 
 No Codex fork and no patched binary. Codex lets you point its two realtime voice endpoints at another server. The shim listens on localhost, speaks Codex's realtime protocol, and runs Flux underneath.
 
-This is an unofficial community shim, not affiliated with or endorsed by OpenAI. The two Codex settings it relies on are marked experimental by OpenAI and may change in a future Codex release. No session with a real microphone and the Codex TUI has been recorded yet; every check in this repo drives the shim with a fake Codex client (see [What has been verified](#what-has-been-verified)).
+This is an unofficial community shim, not affiliated with or endorsed by OpenAI. The two Codex settings it relies on are marked experimental by OpenAI and may change in a future Codex release. No spoken session with a real microphone and the Codex TUI has been recorded yet; the checks in this repo drive the shim with a fake Codex client, plus one headless run of the real Codex 0.162.1 TUI that stops at the open Flux stream (see [What has been verified](#what-has-been-verified)).
 
 ```
 Codex CLI (F8) --WebRTC audio--> shim on 127.0.0.1:8765 --16 kHz PCM--> Deepgram Flux
@@ -76,6 +76,7 @@ call created (session type quicksilver, ...)                            <- v1
 WebRTC connection state: connected
 sideband WebSocket attached (dialect v3); sending session.started       <- v3
 sideband WebSocket attached                                             <- v1, then session.update type=quicksilver
+data channel 'oai-events' opened by Codex                               <- v3
 first audio frame: 48000 Hz, stereo, 960 samples
 Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
 turn 0 StartOfTurn
@@ -101,6 +102,7 @@ Each row names the log line to look for in the shim terminal.
 | Codex voice works but the shim logs nothing | no `call created` line | Codex is still talking to OpenAI. Use the launcher, or check the two keys are in `~/.codex/config.toml` and not a repo `.codex/config.toml`. Confirm `codex --version` is 0.159 or newer (0.159 posts to `/v1/realtime/calls`, 0.162+ to `/v1/live`). |
 | The call never connects | stuck at `WebRTC connection state: connecting` | Run the shim with `-v` and check the answer SDP carried a candidate for a local interface. A VPN can add many interfaces; Codex accepts at most 32 candidates. Try with the VPN off. |
 | Connected, but no audio | no `first audio frame` line | Grant the terminal app microphone access and check Codex is not muted (`Ctrl+X` toggles). |
+| Codex shows `Voice connection timed out. Retrying once after cleanup.` (observed about 15 s after `F8`), then the same again after its own retry | `WebRTC connection state: connected` but no `data channel 'oai-events' opened by Codex` line | Codex is waiting for its data channel, which opens only when the shim's SDP answer says `a=setup:passive`. This build does that; an older checkout answers `active`. Pull, restart the shim, and press `F8` again. |
 | The call is dropped after 30 seconds | `no sideband after 30s; dropping the call` | Codex never opened its WebSocket to the shim. Check `experimental_realtime_ws_base_url` points at `ws://127.0.0.1:8765/v1`. |
 | You spoke, but nothing reached Codex | `EndOfTurn with empty transcript` | Flux heard silence. Check the input device Codex is using and speak closer to the microphone. |
 | Codex cuts you off mid-thought, or waits too long after you finish | `EndOfTurn conf=...` arrives too early or too late | Tune the turn detection (next section). |
@@ -210,6 +212,7 @@ What `unit-check` covers:
 - `close-paths`: closing a session still closes Flux and drops the registry entry when the peer connection refuses to close. That refusal logs one WARNING naming only the exception type, with no traceback. A close cancelled mid-drain still releases the session.
 - `registry`: a call leaves no entry behind once its sideband closes: /healthz reports 0, and a late WebSocket attempt gets 404. Two sidebands opened at once for one call get one 101 and one 409. An oversized offer gets 413 before it is read.
 - `v3-events`: on a realtime v3 call sideband, `session.started` is the first event and the session is ready without a `session.update`, events queued before the attach follow it in order, and the `session.update` deadline does not close it. Flux `Update` and `EndOfTurn` become `input_transcript.added`, `turn.done` (role `user`), and `delegation.created` carrying the final text; `StartOfTurn` sends nothing; a Flux error carries a top-level `message`. `delegation.context.append` and `session.context.append` are logged, `input_audio.append` reaches Flux, and `session.close` ends the sideband.
+- `dtls-role`: the SDP answer says `a=setup:passive` when the offer says `actpass`, as Codex's does. Codex's voice helper opens the SCTP association for its data channel only as the DTLS client, and aiortc opens it only as the ICE controlling side, so an `active` answer leaves both waiting and Codex 0.162 reports `Voice connection timed out` after about 15 s (observed). A caller still opens a data channel against the passive answer, and an offer that fixed its own role is answered with the complementary one.
 
 ```bash
 docker compose run --rm hardening-check
@@ -243,9 +246,10 @@ Every check under `tests/` was run in Docker and in a host venv, with its trimme
 - `wav_to_flux.py` on the sample clip: one `EndOfTurn`, at confidence 0.820 with `eot_threshold` 0.8 and 0.778 with the Flux default of 0.7. The clip's filler pauses ("um", "uh") peaked at 0.340 and never ended the turn.
 - `e2e_fake_codex.py`: the full WebRTC call, sideband WebSocket, caption deltas, `turn_marked`, and one `handoff.requested` carrying the finished transcript, ending in `RESULT: PASS`. With `--dialect v3` (host venv, `evidence/host-e2e-fake-codex-v3.txt`): `session.started` first, `input_transcript.added` captions, one `turn.done`, one `delegation.created` carrying the same transcript, and the sideband closed with code 1000 after `session.close`, ending in `RESULT: PASS`.
 - `ws_transport_check.py` in the v1 shape, the v2 transcription shape, the v2 realtime shape that hands off through a `background_agent` function call, and the v3 shape on `/v1/live` (`--dialect v3`, `evidence/host-ws-transport-v3.txt` and `evidence/docker-ws-transport-v3.txt`): `session.started` first, `input_transcript.added` captions, one `turn.done` and one `delegation.created` carrying the same transcript, an `input_audio.append` sent before `session.update` ignored, and the socket closed after `session.close`.
-- `hardening_check.py` (ten checks) and `unit_check.py` (thirteen checks), as listed under the table above.
+- `hardening_check.py` (ten checks) and `unit_check.py` (fourteen checks), as listed under the table above.
+- The real Codex CLI 0.162.1 TUI against the shim, driven headlessly with `/voice` and no speech (host venv, `evidence/host-codex-0.162.1-headless.txt`): the v3 call, the sideband, `data channel 'oai-events' opened by Codex`, microphone frames arriving, and the Flux stream opening, with the session staying up until the TUI was closed.
 
-Not yet recorded: a session with a real microphone and the Codex TUI. The headless checks drive the shim with a fake Codex client built from the same source citations. The log sequence in [step 3](#3-talk) is what that session should produce, and the 10-minute test above is the matching check for turn detection.
+Not yet recorded: a session with a real microphone, the Codex TUI, and speech. The headless checks drive the shim with a fake Codex client built from the same source citations, and the headless TUI run above stops at the open stream. The log sequence in [step 3](#3-talk) is what the spoken session should produce, and the 10-minute test above is the matching check for turn detection.
 
 ## Privacy and keys
 

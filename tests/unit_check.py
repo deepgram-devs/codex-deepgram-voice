@@ -40,6 +40,13 @@
                 the final text; StartOfTurn sends nothing; a Flux error carries a top-level
                 `message`; delegation.context.append and session.context.append are logged,
                 input_audio.append reaches Flux, and session.close ends the sideband
+  dtls-role     the SDP answer takes the DTLS server role (`a=setup:passive`) when the offer says
+                `actpass`, which is what Codex sends: its voice helper opens the SCTP association
+                for its data channel only as the DTLS client, and aiortc opens it only as the ICE
+                controlling side, so an `active` answer leaves both waiting and Codex 0.162 gives
+                up after about 15 s (observed). An aiortc caller still opens a data channel against the passive
+                answer; an offer that fixed its own role (`active` or `passive`) is answered with
+                the complementary one
 
 Usage:
   python tests/unit_check.py
@@ -716,6 +723,66 @@ async def check_v3_events() -> bool:
     return ok
 
 
+async def check_dtls_role() -> bool:
+    import re
+
+    from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
+
+    ok = True
+
+    def fail(message: str) -> None:
+        nonlocal ok
+        print(f"  {message}")
+        ok = False
+
+    async def offer(setup: str | None):
+        pc = RTCPeerConnection(RTCConfiguration(iceServers=[]))
+        pc.addTransceiver("audio", direction="sendrecv")
+        channel = pc.createDataChannel("oai-events")  # the label Codex's helper uses
+        await pc.setLocalDescription(await pc.createOffer())
+        sdp = pc.localDescription.sdp  # aiortc offers a=setup:actpass, as Codex does
+        if setup is not None:
+            sdp = re.sub(r"a=setup:\w+", f"a=setup:{setup}", sdp)
+        return pc, channel, sdp
+
+    def setups(sdp: str) -> set[str]:
+        return set(re.findall(r"a=setup:(\w+)", sdp))
+
+    app = build_app(Settings(orphan_call_timeout_s=1.0))
+    async with TestClient(TestServer(app)) as client:
+        async def answer_for(sdp: str) -> tuple[int, str]:
+            r = await client.post("/v1/live", data=sdp, headers={"Content-Type": "application/sdp"})
+            return r.status, await r.text()
+
+        # actpass offer (Codex): passive answer, and a caller can still open its data channel
+        pc, channel, sdp = await offer(None)
+        if setups(sdp) != {"actpass"}:
+            fail(f"test offer setup {setups(sdp)}, expected actpass")
+        status, answer = await answer_for(sdp)
+        if status != 201 or setups(answer) != {"passive"}:
+            fail(f"actpass offer: status {status}, answer setup {setups(answer)}, expected passive")
+        # An aiortc caller is ICE controlling, so it sends the SCTP INIT in either DTLS role; this
+        # guards that aiortc callers (the other checks, e2e) still work against a passive answer.
+        # The `a=setup` assertion above is the one that pins the fix.
+        opened = asyncio.Event()
+        channel.on("open", opened.set)
+        await pc.setRemoteDescription(RTCSessionDescription(sdp=answer, type="answer"))
+        try:
+            await asyncio.wait_for(opened.wait(), 5)
+        except asyncio.TimeoutError:
+            fail("data channel did not open against the passive answer")
+        await pc.close()
+
+        # an offer that fixed its own role gets the complementary one
+        for offered, expected in (("passive", "active"), ("active", "passive")):
+            pc, _, sdp = await offer(offered)
+            status, answer = await answer_for(sdp)
+            if status != 201 or setups(answer) != {expected}:
+                fail(f"{offered} offer: status {status}, answer setup {setups(answer)}, expected {expected}")
+            await pc.close()
+    return ok
+
+
 async def main() -> int:
     results = {
         "prefix": check_prefix(),
@@ -731,6 +798,7 @@ async def main() -> int:
         "close-paths": await check_close_paths(),
         "registry": await check_registry(),
         "v3-events": await check_v3_events(),
+        "dtls-role": await check_dtls_role(),
     }
     for name, ok in results.items():
         print(f"[{name}] {'PASS' if ok else 'FAIL'}")
