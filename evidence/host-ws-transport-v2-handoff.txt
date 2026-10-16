@@ -1,0 +1,14 @@
+$ python tests/ws_transport_check.py audio/spacewalk-16k.wav --dialect v2 --session-type realtime
+connected ws://127.0.0.1:64829/v1/realtime (dialect v2, session type realtime)
+[  0.02s] session.updated {'id': 'sess_a4f6e8287b4884d1', 'type': 'realtime'}
+[  0.65s] input_audio_buffer.speech_started
+[  1.13s] conversation.item.input_audio_transcription.delta: 'Yeah. Is'
+[  1.89s] conversation.item.input_audio_transcription.delta: ' As as much as'
+[  2.65s] conversation.item.input_audio_transcription.delta: ','
+[ 27.14s] conversation.item.input_audio_transcription.completed: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 27.14s] conversation.item.done: function_call background_agent prompt="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+
+summary:
+  session.updated: 1, caption deltas: 60, done events: 1, handoffs: 1, other: ['input_audio_buffer.speech_started']
+RESULT: PASS
+exit=0

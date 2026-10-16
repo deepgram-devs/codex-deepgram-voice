@@ -1,0 +1,15 @@
+$ docker compose run --rm ws-check-v1
+ Container codex-deepgram-voice-ws-check-v1-run-7237e528b7a1 Creating
+ Container codex-deepgram-voice-ws-check-v1-run-7237e528b7a1 Created
+connected ws://127.0.0.1:34621/v1/realtime?intent=quicksilver (dialect v1, session type quicksilver)
+[  0.25s] session.updated {'id': 'sess_d5e4ce457897c898', 'type': 'quicksilver'}
+[  1.38s] conversation.input_transcript.delta: 'Yeah. Is'
+[  2.14s] conversation.input_transcript.delta: ' As as much as'
+[  2.94s] conversation.input_transcript.delta: ','
+[ 28.34s] conversation.input_transcript.turn_marked: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 28.34s] conversation.handoff.requested: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+
+summary:
+  session.updated: 1, caption deltas: 60, done events: 1, handoffs: 1, other: []
+RESULT: PASS
+exit=0

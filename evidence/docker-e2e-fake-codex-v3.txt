@@ -1,0 +1,53 @@
+$ docker compose run --rm e2e-v3
+ Container codex-deepgram-voice-e2e-v3-run-82046d772335 Creating
+ Container codex-deepgram-voice-e2e-v3-run-82046d772335 Created
+2026-10-14 14:30:56,038 INFO fake-codex shim started in-process at http://127.0.0.1:46201/v1
+2026-10-14 14:30:56,066 INFO shim [rtc_c08b1db100831662a5c8bec3] call created (dialect v3, query {})
+2026-10-14 14:30:56,066 INFO shim [rtc_c08b1db100831662a5c8bec3] WebRTC audio track received
+2026-10-14 14:30:56,067 INFO aiohttp.access 127.0.0.1 [14/Oct/2026:14:30:56 +0000] "POST /v1/live HTTP/1.1" 201 2250 "-" "Python/3.12 aiohttp/3.14.4"
+2026-10-14 14:30:56,067 INFO shim [rtc_c08b1db100831662a5c8bec3] WebRTC connection state: connecting
+POST http://127.0.0.1:46201/v1/live -> 201, Location: /v1/live/rtc_c08b1db100831662a5c8bec3, answer 2051 bytes
+2026-10-14 14:30:56,071 INFO shim [rtc_c08b1db100831662a5c8bec3] sideband WebSocket attached (dialect v3); sending session.started
+sideband connected: ws://127.0.0.1:46201/v1/live/rtc_c08b1db100831662a5c8bec3
+[  0.03s] session.started id=sess_79a9f64b5637ab56
+2026-10-14 14:30:56,102 INFO shim [rtc_c08b1db100831662a5c8bec3] WebRTC connection state: connected
+2026-10-14 14:30:56,110 INFO shim [rtc_c08b1db100831662a5c8bec3] data channel 'oai-events' opened by Codex
+2026-10-14 14:30:56,187 INFO shim [rtc_c08b1db100831662a5c8bec3] first audio frame: 48000 Hz, stereo, 960 samples
+2026-10-14 14:30:56,189 INFO flux connecting to Flux STT: wss://api.deepgram.com/v2/listen?model=flux-general-en&encoding=linear16&sample_rate=16000&eot_threshold=0.8&eot_timeout_ms=6000
+2026-10-14 14:30:56,532 INFO shim [rtc_c08b1db100831662a5c8bec3] Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
+2026-10-14 14:30:56,533 INFO flux Flux connected
+2026-10-14 14:30:56,908 INFO shim [rtc_c08b1db100831662a5c8bec3] turn 0 StartOfTurn
+[  1.23s] input_transcript.added #1: 'Yeah. Is'
+[  1.95s] input_transcript.added #2: ' As as much as'
+[  2.67s] input_transcript.added #3: ','
+[  2.91s] input_transcript.added #4: ' um,'
+[  3.15s] input_transcript.added #5: " it's worth"
+[  6.27s] input_transcript.added #10: ' uh,'
+[ 10.83s] input_transcript.added #20: ' are'
+[ 15.15s] input_transcript.added #30: ' if'
+[ 18.75s] input_transcript.added #40: ' women who'
+[ 22.11s] input_transcript.added #50: ' qualified'
+[ 25.71s] input_transcript.added #60: ' have'
+2026-10-14 14:31:22,231 INFO shim [rtc_c08b1db100831662a5c8bec3] turn 0 EndOfTurn conf=0.910 -> Codex: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I thi...
+[ 26.19s] turn.done role=user: "Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+[ 26.19s] delegation.created id=handoff_7487ef28b52c text="Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all femal"
+2026-10-14 14:31:22,232 INFO shim [rtc_c08b1db100831662a5c8bec3] Codex reply for handoff_7487ef28b52c: Starting on it.
+done waiting
+2026-10-14 14:31:28,249 INFO shim [rtc_c08b1db100831662a5c8bec3] Codex closed the session
+2026-10-14 14:31:28,250 INFO shim [rtc_c08b1db100831662a5c8bec3] sideband WebSocket closed
+2026-10-14 14:31:28,380 INFO shim [rtc_c08b1db100831662a5c8bec3] audio track ended after 1442 frames
+2026-10-14 14:31:28,381 INFO shim [rtc_c08b1db100831662a5c8bec3] WebRTC connection state: closed
+2026-10-14 14:31:28,382 INFO shim [rtc_c08b1db100831662a5c8bec3] session closed after 32s, 1 handoff(s)
+shim closed the sideband after session.close (code 1000)
+2026-10-14 14:31:28,385 INFO aiohttp.access 127.0.0.1 [14/Oct/2026:14:30:56 +0000] "GET /v1/live/rtc_c08b1db100831662a5c8bec3 HTTP/1.1" 101 0 "-" "Python/3.12 aiohttp/3.14.4"
+
+summary:
+  first event:               session.started
+  session.started received:  True
+  input_transcript.added:    61
+  turn.done events:          1
+  delegation.created events: 1
+  closed with 1000 after session.close: True
+    -> Codex would start on: Yeah. As as much as, um, it's worth celebrating, uh, the first, uh, spacewalk, um, with an all female team. Um, I think many of us are looking forward to it just being normal. And, um, I think if it signifies anything, it is, uh, to honor the the women who came before us who, um, were skilled and qualified, um, and didn't get, uh, the same opportunities that we have today.
+RESULT: PASS
+exit=0
