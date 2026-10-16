@@ -43,7 +43,7 @@ Codex voice shim listening on http://127.0.0.1:8765  (calls: /v1/realtime/calls 
 Codex config: experimental_realtime_webrtc_call_base_url = "http://127.0.0.1:8765/v1", experimental_realtime_ws_base_url = "ws://127.0.0.1:8765/v1"
 ```
 
-Leave this terminal open. `Ctrl+C` stops the shim. `curl 127.0.0.1:8765/healthz` returns `{"ok": true, "sessions": 0}` while it runs. The shim exits with status 1 at startup if `DEEPGRAM_API_KEY` is not set. `-v` prints every Flux turn event; drop it later for a quieter log.
+Leave this terminal open. `Ctrl+C` stops the shim. `curl 127.0.0.1:8765/healthz` returns `{"ok": true, "sessions": 0}` while it runs. The shim exits with status 1 at startup if `DEEPGRAM_API_KEY` is not set. `-v` prints every Flux turn event, including spoken transcripts and Codex replies; do not use it where terminal output is retained or shared. Drop it later for a quieter log.
 
 ### 2. Start Codex pointed at the shim
 
@@ -71,8 +71,8 @@ Press `F8` (or type `/voice`), say what you want done, and stop talking. `Ctrl+X
 In the shim terminal you should see this sequence. Codex 0.162 and later (realtime v3) log the two lines marked v3; Codex 0.159 (realtime v1) logs the `quicksilver` ones:
 
 ```
-call created (dialect v3, query {})                                     <- v3
-call created (session type quicksilver, ...)                            <- v1
+call created (dialect v3)                                               <- v3
+call created (session type quicksilver)                                 <- v1
 WebRTC connection state: connected
 sideband WebSocket attached (dialect v3); sending session.started       <- v3
 sideband WebSocket attached                                             <- v1, then session.update type=quicksilver
@@ -81,8 +81,8 @@ first audio frame: 48000 Hz, stereo, 960 samples
 Flux STT stream opened (eot_threshold=0.8 eot_timeout_ms=6000)
 turn 0 StartOfTurn
 turn 0 Update conf=0.0xx 'Create a file called...'      <- only with -v
-turn 0 EndOfTurn conf=0.8xx -> Codex: Create a file called hello.txt that says hello from Flux
-Codex reply for handoff_...: ...
+turn 0 EndOfTurn conf=0.8xx -> Codex: <spoken transcript>  <- only with -v
+Codex reply for handoff_...: <reply text>                  <- only with -v
 ```
 
 In Codex you should see the live caption while you speak, then the finished transcript, then the turn running. In the log, a *call* is the WebRTC connection Codex opens, the *sideband* is the WebSocket it opens beside the call to carry events, and a *session* is the voice session both belong to; one call, one sideband, one session.
@@ -176,7 +176,7 @@ Every check is also a `compose.yaml` service. `DEEPGRAM_API_KEY` must be exporte
 | `e2e`, `e2e-v3` | yes | The full Codex protocol path through the shim, WebRTC and sideband, in realtime v1 (Codex 0.159) and realtime v3 (Codex 0.162) |
 | `ws-check-v1`, `ws-check-v2`, `ws-check-v2-handoff`, `ws-check-v3` | yes | The plain WebSocket transport in the v1 shape, the v2 transcription shape, the v2 realtime shape with its `background_agent` handoff, and the v3 shape on `/v1/live`: `session.started` first, `input_transcript.added`, one `turn.done`, one `delegation.created` with the same text, audio sent before `session.update` ignored, and `session.close` closing the socket |
 | `hardening-check` | no (needs network) | Startup refusals, cross-origin requests, orphaned calls, a bad key, late sidebands, clients that never send `session.update`, malformed call bodies and sideband frames, and bad WebSocket upgrades (list below) |
-| `unit-check` | no | Offline session logic: captions, event ordering, close paths, the resampler tail, queue caps, Origin and loopback checks, message validation, the session registry, and the realtime v3 events (list below) |
+| `unit-check` | no | Offline session logic: captions, event ordering, close paths, the resampler tail, queue caps, Origin and loopback checks, message validation, log privacy, shutdown cleanup, the session registry, and the realtime v3 events (list below) |
 
 What `hardening-check` covers:
 
@@ -210,6 +210,8 @@ What `unit-check` covers:
 - `loopback`: `127.0.0.1`, `127.1.2.3`, `::1`, and `localhost` count as loopback, while `0.0.0.0`, LAN addresses, hostnames, and an empty string do not.
 - `bad-messages`: Codex messages with the right `type` but a string `session`, a `session.type` that is not a string, a string `item`, a non-string `audio`, a missing `audio`, or a null `output_text` raise no exception. A well-formed `session.update` still works on the same session afterwards.
 - `close-paths`: closing a session still closes Flux and drops the registry entry when the peer connection refuses to close. That refusal logs one WARNING naming only the exception type, with no traceback. A close cancelled mid-drain still releases the session.
+- `log-privacy`: default INFO logs omit dictated text, Codex replies, and arbitrary call query values; those details appear only with `-v`.
+- `shutdown`: application shutdown closes an orphaned WebRTC call and clears the session registry.
 - `registry`: a call leaves no entry behind once its sideband closes: /healthz reports 0, and a late WebSocket attempt gets 404. Two sidebands opened at once for one call get one 101 and one 409. An oversized offer gets 413 before it is read.
 - `v3-events`: on a realtime v3 call sideband, `session.started` is the first event and the session is ready without a `session.update`, events queued before the attach follow it in order, and the `session.update` deadline does not close it. Flux `Update` and `EndOfTurn` become `input_transcript.added`, `turn.done` (role `user`), and `delegation.created` carrying the final text; `StartOfTurn` sends nothing; a Flux error carries a top-level `message`. `delegation.context.append` and `session.context.append` are logged, `input_audio.append` reaches Flux, and `session.close` ends the sideband.
 - `dtls-role`: the SDP answer says `a=setup:passive` when the offer says `actpass`, as Codex's does. Codex's voice helper opens the SCTP association for its data channel only as the DTLS client, and aiortc opens it only as the ICE controlling side, so an `active` answer leaves both waiting and Codex 0.162 reports `Voice connection timed out` after about 15 s (observed). A caller still opens a data channel against the passive answer, and an offer that fixed its own role is answered with the complementary one.
@@ -246,7 +248,7 @@ Every check under `tests/` was run in Docker and in a host venv, with its trimme
 - `wav_to_flux.py` on the sample clip: one `EndOfTurn`, at confidence 0.820 with `eot_threshold` 0.8 and 0.778 with the Flux default of 0.7. The clip's filler pauses ("um", "uh") peaked at 0.340 and never ended the turn.
 - `e2e_fake_codex.py`: the full WebRTC call, sideband WebSocket, caption deltas, `turn_marked`, and one `handoff.requested` carrying the finished transcript, ending in `RESULT: PASS`. With `--dialect v3` (host venv, `evidence/host-e2e-fake-codex-v3.txt`): `session.started` first, `input_transcript.added` captions, one `turn.done`, one `delegation.created` carrying the same transcript, and the sideband closed with code 1000 after `session.close`, ending in `RESULT: PASS`.
 - `ws_transport_check.py` in the v1 shape, the v2 transcription shape, the v2 realtime shape that hands off through a `background_agent` function call, and the v3 shape on `/v1/live` (`--dialect v3`, `evidence/host-ws-transport-v3.txt` and `evidence/docker-ws-transport-v3.txt`): `session.started` first, `input_transcript.added` captions, one `turn.done` and one `delegation.created` carrying the same transcript, an `input_audio.append` sent before `session.update` ignored, and the socket closed after `session.close`.
-- `hardening_check.py` (ten checks) and `unit_check.py` (fourteen checks), as listed under the table above.
+- `hardening_check.py` (ten checks) and `unit_check.py` (sixteen checks), as listed under the table above.
 - The real Codex CLI 0.162.1 TUI against the shim, driven headlessly with `/voice` and no speech (host venv, `evidence/host-codex-0.162.1-headless.txt`): the v3 call, the sideband, `data channel 'oai-events' opened by Codex`, microphone frames arriving, and the Flux stream opening, with the session staying up until the TUI was closed.
 - A spoken session with a real microphone and the Codex CLI 0.162.1 TUI on macOS (host venv, `evidence/host-codex-0.162.1-mic-session.txt`, with `-v` so every Flux `Update` and its end-of-turn confidence is in the log): three utterances in 37 s, each ending in `EndOfTurn` at confidence 0.821, 0.834, and 0.805 against the 0.8 threshold and handed to Codex, the last one `Create a file called hello dot t x t that says hello from Flux.`, which Codex carried out (it wrote `hello.txt`). While words were still arriving the confidence stayed below 0.25; it climbed past 0.8 only after each sentence was complete, and in the gap before the last word of the third turn it rose to 0.70 without ending the turn. Codex's spoken-reply context (`session.context.append`) arrived after the first two turns.
 
@@ -261,7 +263,7 @@ Not yet recorded: the 10-minute turn-detection exercise above; the spoken sessio
 - Requests carrying a browser Origin other than localhost get 403. That stops a web page you visit from opening Flux sessions on your key; it is not authentication, since Codex itself sends no Origin and any non-browser client can omit one.
 - In Docker the shim must bind `0.0.0.0` inside the container, so the image's default command passes `--allow-unauthenticated-remote`. The compose port mapping on 127.0.0.1 is what keeps it off your network. A bare `docker run -p 8765:8765` would publish it on every interface and the shim cannot see the mapping from inside; use `-p 127.0.0.1:8765:8765`.
 - A sideband or WebSocket client that never sends `session.update` is closed after 10 seconds (close code 1008), and the events queued before it are capped at 2048 events or 1 MiB, so a misbehaving client cannot hold a session open or grow it without bound.
-- `-v` turns on debug logging for the shim. It does not print your API key.
+- Default logs include connection and session metadata, not dictated text, Codex replies, or request query values. `-v` turns on debug logging and prints transcripts and replies for diagnostics; it does not print your API key.
 
 ## Files
 

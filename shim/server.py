@@ -402,7 +402,7 @@ class VoiceSession:
             self.last_sent = ""
             self.prev_update = ""
             self.handoffs += 1
-            log.info("[%s] turn %d EndOfTurn conf=%s -> Codex: %s", self.tag, info.turn_index, conf_s, trim(text))
+            log.debug("[%s] turn %d EndOfTurn conf=%s -> Codex: %s", self.tag, info.turn_index, conf_s, trim(text))
             await self.emit(self.done_event(text))
             handoff = self.handoff_event(text)
             if handoff is not None:
@@ -607,16 +607,16 @@ class VoiceSession:
             return False
         if kind == "conversation.handoff.append":
             text = data.get("output_text")
-            log.info("[%s] Codex reply for %s: %s", self.tag, data.get("handoff_id"),
-                     trim(text) if isinstance(text, str) else "(no text)")
+            log.debug("[%s] Codex reply for %s: %s", self.tag, data.get("handoff_id"),
+                      trim(text) if isinstance(text, str) else "(no text)")
             return False
         if kind == "delegation.context.append":
             content = data.get("content")
             parts = content if isinstance(content, list) else []
             text = "".join(p.get("text") for p in parts
                            if isinstance(p, dict) and isinstance(p.get("text"), str))
-            log.info("[%s] Codex reply for %s: %s", self.tag, data.get("delegation_item_id"),
-                     trim(text) if text else "(no text)")
+            log.debug("[%s] Codex reply for %s: %s", self.tag, data.get("delegation_item_id"),
+                      trim(text) if text else "(no text)")
             return False
         if kind == "session.context.append":
             log.info("[%s] Codex session context (%s) ignored", self.tag,
@@ -725,6 +725,16 @@ def build_app(settings: Settings) -> web.Application:
         key = session.call_id or session.session_id
         app["sessions"][key] = session
         session.on_closed = lambda: app["sessions"].pop(key, None)
+
+    async def close_sessions(_app: web.Application) -> None:
+        sessions = list(app["sessions"].values())
+        results = await asyncio.gather(
+            *(session.close() for session in sessions), return_exceptions=True
+        )
+        for session, result in zip(sessions, results, strict=True):
+            if isinstance(result, BaseException):
+                log.warning("[%s] session close during shutdown failed (%s)", session.tag,
+                            type(result).__name__)
 
     async def create_call(request: web.Request, dialect: str) -> web.Response:
         if (request.content_length or 0) > MAX_CALL_BODY:
@@ -837,13 +847,12 @@ def build_app(settings: Settings) -> web.Application:
             session.dialect = "v3"
             session.session_type = "live"
             register(session)
-            log.info("[%s] call created (dialect v3, query %s)", call_id, dict(request.query) or "{}")
+            log.info("[%s] call created (dialect v3)", call_id)
         else:
             session.session_type = session_type_of(session_json)
             session.dialect = "v1" if session.session_type == "quicksilver" else "v2"
             register(session)
-            log.info("[%s] call created (session type %s, query %s)", call_id, session.session_type,
-                     dict(request.query) or "{}")
+            log.info("[%s] call created (session type %s)", call_id, session.session_type)
         try:
             answer = (await session.start_webrtc(
                 sdp, dtls_server=offer_allows_either_dtls_role(desc))).encode()
@@ -964,6 +973,7 @@ def build_app(settings: Settings) -> web.Application:
         loop._codex_shim_aioice_handler = handler  # type: ignore[attr-defined]
 
     app.on_startup.append(install_loop_exception_handler)
+    app.on_shutdown.append(close_sessions)
     app.router.add_get("/healthz", healthz)
     app.router.add_route("*", "/{tail:.*}", dispatch)
     return app

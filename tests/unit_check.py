@@ -47,6 +47,8 @@
                 up after about 15 s (observed). An aiortc caller still opens a data channel against the passive
                 answer; an offer that fixed its own role (`active` or `passive`) is answered with
                 the complementary one
+  log-privacy   default INFO logging omits dictated text, Codex replies, and request query values
+  shutdown      application shutdown closes an orphaned WebRTC call and clears the session registry
 
 Usage:
   python tests/unit_check.py
@@ -634,6 +636,67 @@ async def check_registry() -> bool:
     return ok
 
 
+async def check_log_privacy() -> bool:
+    app = build_app(Settings(orphan_call_timeout_s=60.0))
+    shim_log = logging.getLogger("shim")
+    old_level = shim_log.level
+    shim_log.setLevel(logging.INFO)
+    try:
+        with CapturedLog("shim", logging.INFO) as logged:
+            async with TestClient(TestServer(app)) as client:
+                r = await client.post(
+                    "/v1/realtime/calls?query-sentinel=do-not-log",
+                    data="v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n",
+                    headers={"Content-Type": "application/sdp"},
+                )
+                if r.status != 201:
+                    print(f"  call creation returned {r.status}, wanted 201")
+                    return False
+                session = next(iter(app["sessions"].values()))
+                session.ws = FakeSideband()
+                await session.handle_codex_message({"type": "session.update", "session": {}})
+                await session.on_turn(turn("EndOfTurn", "transcript-sentinel", conf=0.9))
+                await session.handle_codex_message({
+                    "type": "conversation.handoff.append",
+                    "handoff_id": "handoff_test",
+                    "output_text": "reply-sentinel",
+                })
+                await session.close()
+        messages = [record.getMessage() for record in logged.records]
+    finally:
+        shim_log.setLevel(old_level)
+    leaked = [message for message in messages
+              if any(sentinel in message for sentinel in
+                     ("query-sentinel", "do-not-log", "transcript-sentinel", "reply-sentinel"))]
+    if leaked:
+        print(f"  default logs leaked sensitive content: {leaked}")
+        return False
+    return True
+
+
+async def check_shutdown() -> bool:
+    app = build_app(Settings(orphan_call_timeout_s=60.0))
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        r = await client.post(
+            "/v1/realtime/calls",
+            data="v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n",
+            headers={"Content-Type": "application/sdp"},
+        )
+        if r.status != 201:
+            print(f"  call creation returned {r.status}, wanted 201")
+            return False
+        session = next(iter(app["sessions"].values()))
+    finally:
+        await client.close()
+    if app["sessions"] or not session.closed or session.pc is None or session.pc.connectionState != "closed":
+        print(f"  shutdown left sessions={len(app['sessions'])}, closed={session.closed}, "
+              f"pc={session.pc.connectionState if session.pc is not None else None}")
+        return False
+    return True
+
+
 async def check_v3_events() -> bool:
     ok = True
 
@@ -656,9 +719,9 @@ async def check_v3_events() -> bool:
     s.ws = ws  # type: ignore[assignment]
     shim_log = logging.getLogger("shim")
     old_level = shim_log.level
-    shim_log.setLevel(logging.INFO)
+    shim_log.setLevel(logging.DEBUG)
     try:
-        with CapturedLog("shim", logging.INFO) as logged:
+        with CapturedLog("shim", logging.DEBUG) as logged:
             runner = asyncio.create_task(s.run_ws(ws))  # type: ignore[arg-type]
             await asyncio.sleep(0.4)  # past the 0.2 s session.update deadline
             want_first = {"type": "session.started", "session": {"id": s.session_id}}
@@ -797,6 +860,8 @@ async def main() -> int:
         "bad-messages": await check_bad_messages(),
         "close-paths": await check_close_paths(),
         "registry": await check_registry(),
+        "log-privacy": await check_log_privacy(),
+        "shutdown": await check_shutdown(),
         "v3-events": await check_v3_events(),
         "dtls-role": await check_dtls_role(),
     }
